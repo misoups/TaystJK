@@ -424,12 +424,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_RELEASE_COMMIT=$(gh api repos/${{ github.repository }}/releases/tags/latest --jq '.target_commitish' 2>/dev/null || echo "")
+          LATEST_RELEASE_COMMIT=$(gh api repos/${{ github.repository }}/releases/tags/latest --jq '.target_commitish // empty' 2>/dev/null || echo "")
           gh release delete latest --cleanup-tag --yes || true
-          
+
           RELEASE_BODY="## Commits"
-          
-          if [ -n "$LATEST_RELEASE_COMMIT" ]; then
+
+          if [ -n "$LATEST_RELEASE_COMMIT" ] && git rev-parse --quiet --verify "$LATEST_RELEASE_COMMIT^{commit}" >/dev/null 2>&1; then
             COMMITS=$(git log $LATEST_RELEASE_COMMIT..HEAD --pretty=format:"%h|%s|%an")
           else
             COMMITS=$(git log -3 --pretty=format:"%h|%s|%an")
