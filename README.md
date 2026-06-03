@@ -27,17 +27,55 @@ Our aims are to:
 - Support more hardware (x86_64, Arm, Apple Silicon) and software platforms (Linux, macOS)
 - Provide a clean base from which new code modifications can be made.
 
-## Notable changes from upstream (taysta/TaystJK)
+## Notable changes from [taysta/TaystJK](https://github.com/taysta/TaystJK)
 
-### Race mode
-- **Q3 Defrag & Twi timer format support** — servers now recognise `target_startTimer` / `target_stopTimer` / `target_checkpoint` point entities (Q3 defrag format) and `Twi_timer` brush entities in addition to the existing `df_trigger_*` classnames, bringing compatibility with a wider range of race maps
-- **`/amtelemark` locked mid-run** — setting a telemark is blocked while the race timer is active, or after `/noclip` / `/respos` use, preventing mark abuse
-- **`/respos` (save/restore position)** — `/savepos` snapshots origin, angles and velocity; `/respos` restores it (resets timer in competitive mode, preserves velocity for practice mode)
-- **Cleaner invalidation message** — the race-state-invalidated center-print now reads `^1Error: your race state is invalidated. ^7Please /kill or /amtele to reset.`
+### Race Mode
 
-### Server quality-of-life
-- **Auto-spec solo exemption** — `g_autoSpec` no longer moves a player to spectator when they are the only non-spectator on the server, regardless of how many spectators are watching
-- **Console map/time display** — opening the console shows the current map filename, client version with build date, and local clock (matching EternalJK2MV style)
+- **Base JKA clients now enter race mode** — Removed `isJAPRO` guards from `ClientBegin`, `ClientSpawn`, and the per-frame `ClientThink_real` check that were stripping race mode from non-plugin clients. Base clients stay in race mode with timers and commands working; their movement style is locked to MV_JKA since they can't predict custom physics.
+- **`/move` requires the jaPRO plugin** — Base clients get a clear message pointing to the download instead of having their style silently overridden every frame.
+- **Checkpoint personal bests** — Checkpoint times are stored per (username, map, course, style) in the database. On crossing a checkpoint, shows a green/red delta vs your PB. Auto-saves if improved.
+- **`/savepos` / `/respos`** — Saves and restores position, angles, and velocity. In competitive race mode acts like `/amtele` (resets timer); in practice mode teleports without touching the timer.
+- **`/resetspawn`** — Clears telemark and saved spawn position, resets to map default spawn.
+- **`/amtelemarkreset`** — Clears telemark without resetting the run timer.
+- **Jetpack tracking** — Using jetpack thrust before the start timer fires invalidates the run. `/move` is blocked until `/resetspawn` or `/kill` if jetpack was activated this life.
+- **Noclip invalidation** — `/noclip` sets a flag that blocks the start trigger from firing until `/amtele` or `/kill`.
+- **No-reactivate start trigger** — Start trigger cannot fire twice in the same run, preventing pre-speed building by repeatedly brushing the trigger (matches Q3 Defrag behaviour).
+- **Soft death in race mode** — Dying teleports you to your telemark (or map spawn if none set) instead of a full respawn sequence. `/kill` in race mode uses the same path.
+- **Auto-spec idle players** — `g_autoSpec` moves idle players to spectator after a configurable timeout, with per-second warnings in the final 10 seconds. Never specs a player mid-race, and skips auto-spec if only one non-spectator is on the server.
+
+### Map System
+
+- **Q3 Defrag timer format support** — `target_startTimer`, `target_stopTimer`, and `target_checkpoint` entities are recognised and converted at map load via `G_ConvertQ3DefragTimers()`.
+- **Twi mod timer format support** — `Twi_timer` brush entities are also converted at map load.
+- **Defrag arc jumppad support** (`trigger_push_velocity`) — Preserves player XY velocity and only applies Z, matching defrag arc pad behaviour. Standard jumppads replace velocity entirely as before.
+- **Per-map haste config** — Server admins can place `mapconfigs/<mapname>.cfg` with `seta g_mapHaste 1` to enable haste for specific maps. Server-configured haste is always valid for race submissions; manual haste pickups are not.
+- **`/maplist` rewrite** — Enumerates all `.bsp` files on the server (not arena-file dependent), sorts alphabetically, excludes all stock base-JKA maps. Numbers are stable and shared with `/callvote mapnum`.
+- **`/callvote randommap`** — Votes for a random map from the server's full BSP list, excluding base JKA maps.
+- **`/callvote mapnum <n>`** — Votes for a map by its index from `/maplist`.
+- **Map change lockout** — `randommap` and `mapnum` votes are blocked for 10 minutes after a map load, same as the existing `map` vote lockout.
+
+### New Movement Style
+
+- **MV_QUAJK (style 19)** added — Available via `/move quajk`. Does not receive haste speed bonus.
+
+### Cross-Server Communication (Linux)
+
+- **POSIX FIFO-based IPC** (`g_crossserver.c`) — Same-machine servers can share a cluster via `g_crossServerPorts` cvar. Events (connect, join, quit, chat, run completion) are broadcast to peer servers and displayed with a colour-coded `[server-name]` prefix. Compiles out on Windows builds.
+- **`/say_cross <message>`** — Sends a chat message to all servers in the cluster.
+- **PB broadcast** — Global personal bests are announced across the cluster with badges: `(WR)`, `(SR+PB)`, `(SR)`, `(PB)`.
+
+### Combat
+
+- **Removed saber block RNG** — Deleted the `g_reducesaberblock` random check that could cause saber blocks to fail unpredictably.
+
+### Client / Engine
+
+- **`cl_reconnectArgs` converted from cvar to static buffer** — Removes cvar system overhead and potential memory issues with reconnect state.
+- **Removed obsolete feature flags** from `bg_public.h`: `TAYSTJK_INFO_FLIPKICK`, `TAYSTJK_INFO_GRAPPLE`, `TAYSTJK_INFO_FIXROLL_1/2/3`.
+
+### Build & CI
+
+- **Release workflow robustness** — Fixed `gh api` jq query with `// empty` for safe null handling; added commit validation before diffing.
 
 ---
 
