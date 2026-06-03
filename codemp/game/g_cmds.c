@@ -2769,11 +2769,13 @@ const char *G_GetArenaInfoByMap( const char *map );
 #define MAP_BUF_SIZE	16384
 
 int compcstr( const void *a, const void *b );  // defined later in this file
+qboolean IsBaseMap( char *s );                  // defined later in this file
 
 // Fills sortedOut[0..return_value-1] with pointers into mapBuf (caller provides both).
-// Strips .bsp extension, sorts alphabetically. Returns count (capped at maxMaps).
+// Strips .bsp extension, sorts alphabetically, excludes stock base-JKA maps.
+// Returns count (capped at maxMaps).
 static int G_GetSortedMapList( char *mapBuf, int mapBufSize, char **sortedOut, int maxMaps ) {
-	int numMaps, i, len;
+	int numMaps, i, len, out;
 	char *p;
 	numMaps = trap->FS_GetFileList( "maps", ".bsp", mapBuf, mapBufSize );
 	if ( numMaps <= 0 ) return 0;
@@ -2787,7 +2789,12 @@ static int G_GetSortedMapList( char *mapBuf, int mapBufSize, char **sortedOut, i
 		p += len + 1;
 	}
 	qsort( sortedOut, numMaps, sizeof( sortedOut[0] ), compcstr );
-	return numMaps;
+	// Compact out stock base-JKA maps (they have no race timers).
+	for ( i = 0, out = 0; i < numMaps; i++ ) {
+		if ( !IsBaseMap( sortedOut[i] ) )
+			sortedOut[out++] = sortedOut[i];
+	}
+	return out;
 }
 
 // /maplist — prints a numbered list of all maps on the server.
