@@ -2996,10 +2996,10 @@ qboolean G_VoteMap( gentity_t *ent, int numArgs, const char *arg1, const char *a
 	}
 
 	if ( !mapName || !mapName[0] )
-		mapName = "ERROR";
+		mapName = arg2;
 
 	if ( !mapName2 || !mapName2[0] )
-		mapName2 = "ERROR";
+		mapName2 = arg2;
 
 	Com_sprintf( level.voteDisplayString, sizeof( level.voteDisplayString ), "map %s (%s)", mapName, mapName2 );
 	Q_strncpyz( level.voteStringClean, level.voteString, sizeof( level.voteStringClean ) );
@@ -6869,6 +6869,11 @@ static void Cmd_MovementStyle_f(gentity_t *ent)
 		return;
 	}
 
+	if (!ent->client->pers.isJAPRO) {
+		trap->SendServerCommand(ent-g_entities, "print \"^1Movement styles require the client plugin. Download at www.playja.pro\n\"");
+		return;
+	}
+
 	if (VectorLength(ent->client->ps.velocity) && !ent->client->ps.m_iVehicleNum) {
 		trap->SendServerCommand(ent-g_entities, "print \"You must be standing still to use this command!\n\"");
 		return;
@@ -6876,6 +6881,12 @@ static void Cmd_MovementStyle_f(gentity_t *ent)
 
 	if (ent->client->jetpackActivated) {
 		trap->SendServerCommand(ent-g_entities, "print \"Jetpack was used - use /resetspawn or /kill before switching styles.\n\"");
+		return;
+	}
+
+	if (ent->client->pers.telemarkOrigin[0] != 0 || ent->client->pers.telemarkOrigin[1] != 0 ||
+		ent->client->pers.telemarkOrigin[2] != 0 || ent->client->pers.telemarkAngle != 0) {
+		trap->SendServerCommand(ent-g_entities, "print \"Telemark is set - use /resetspawn before switching styles.\n\"");
 		return;
 	}
 
@@ -9276,7 +9287,6 @@ command_t commands[] = {
 	{ "killother",			Cmd_KillOther_f,			CMD_CHEAT|CMD_ALIVE },
 //	{ "kylesmash",			TryGrapple,					0 },
 
-	{ "latest",				Cmd_RaceLatest_f,			CMD_NOINTERMISSION },
 
 	{ "launch",				Cmd_Launch_f,				CMD_NOINTERMISSION|CMD_ALIVE},
 

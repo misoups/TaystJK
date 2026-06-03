@@ -3175,10 +3175,6 @@ void ClientBegin( int clientNum, qboolean allowTeamReset ) {
 	else if (!g_raceMode.integer)
 		client->sess.raceMode = qfalse;
 
-	// Non-TaystJK clients cannot predict jaPRO physics — keep them in vanilla mode
-	if (!client->pers.isJAPRO)
-		client->sess.raceMode = qfalse;
-
 	if (client->sess.raceMode)
 		client->ps.stats[STAT_RACEMODE] = 1;
 	else
@@ -4260,9 +4256,6 @@ void ClientSpawn(gentity_t *ent) {
 	if (client->sess.sessionTeam != TEAM_FREE && client->sess.sessionTeam != TEAM_SPECTATOR)
 		client->sess.raceMode = qfalse;
 	else if (!g_raceMode.integer)
-		client->sess.raceMode = qfalse;
-
-	if (!client->pers.isJAPRO)
 		client->sess.raceMode = qfalse;
 
 	if (client->sess.raceMode)
