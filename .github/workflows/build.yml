@@ -404,7 +404,7 @@ jobs:
           if-no-files-found: error
 
   create-latest:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
     needs: [msvc, ubuntu, macos-x86_64, macos-arm64, macos-universal2]
     runs-on: ubuntu-22.04
     permissions:
