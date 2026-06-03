@@ -3856,10 +3856,10 @@ void ClientThink_real( gentity_t *ent ) {
 
 	// Non-TaystJK clients cannot predict custom physics — force them to vanilla JKA movement
 	// so their bg_pmove prediction matches the server and animations don't diverge/jitter.
+	// Note: keep them in race mode (raceMode/STAT_RACEMODE) so timers, /move, etc. still work;
+	// the movementStyle is also locked to MV_JKA below unconditionally.
 	if (!client->pers.isJAPRO && client->ps.stats[STAT_RACEMODE]) {
 		client->sess.movementStyle = MV_JKA;
-		client->sess.raceMode = qfalse;
-		client->ps.stats[STAT_RACEMODE] = 0;
 	}
 	if (!client->pers.isJAPRO)
 		client->ps.stats[STAT_MOVEMENTSTYLE] = MV_JKA;

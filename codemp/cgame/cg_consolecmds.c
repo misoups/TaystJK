@@ -2702,7 +2702,6 @@ static const char *gcmds[] = {
 	"rTop",
 	"rRank",
 	"rLatest",
-	"latest",
 	"rWorst",
 	"rPopular",
 	"rFind",
