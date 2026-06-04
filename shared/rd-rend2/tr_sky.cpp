@@ -578,6 +578,12 @@ static void FillCloudySkySide( const int mins[2], const int maxs[2], qboolean ad
 	tHeight = maxs[1] - mins[1] + 1;
 	sWidth = maxs[0] - mins[0] + 1;
 
+	if ( tess.numVertexes + tHeight * sWidth >= SHADER_MAX_VERTEXES )
+	{
+		ri.Printf( PRINT_WARNING, "WARNING: SHADER_MAX_VERTEXES hit in FillCloudySkySide() -- sky clipped\n" );
+		return;
+	}
+
 	for ( t = mins[1]+HALF_SKY_SUBDIVISIONS; t <= maxs[1]+HALF_SKY_SUBDIVISIONS; t++ )
 	{
 		for ( s = mins[0]+HALF_SKY_SUBDIVISIONS; s <= maxs[0]+HALF_SKY_SUBDIVISIONS; s++ )
@@ -588,11 +594,6 @@ static void FillCloudySkySide( const int mins[2], const int maxs[2], qboolean ad
 			tess.texCoords[tess.numVertexes][0][1] = s_skyTexCoords[t][s][1];
 
 			tess.numVertexes++;
-
-			if ( tess.numVertexes >= SHADER_MAX_VERTEXES )
-			{
-				ri.Error( ERR_DROP, "SHADER_MAX_VERTEXES hit in FillCloudySkySide()" );
-			}
 		}
 	}
 
