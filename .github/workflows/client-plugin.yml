@@ -57,7 +57,6 @@ jobs:
         run: |
           cmake $GITHUB_WORKSPACE \
             -A ${{ matrix.platform }} \
-            -DCMAKE_INSTALL_PREFIX=install \
             -DBuildPortableVersion=ON \
             -DBuildMPEngine=OFF \
             -DBuildMPDed=OFF \
@@ -74,13 +73,16 @@ jobs:
         shell: bash
         run: cmake --build . --config Release -j $NUMBER_OF_PROCESSORS
 
-      - name: Install & Package
+      - name: Package
         shell: bash
         working-directory: ${{ github.workspace }}/build
         run: |
-          cmake --install . --config Release
-          cd install/JediAcademy/taystjk
-          7z a -r ../../../TaystJK-client-plugin-windows-${{ matrix.arch }}.zip *
+          mkdir -p plugin/taystjk
+          cp Release/cgame*.dll              plugin/taystjk/
+          cp Release/ui*.dll                 plugin/taystjk/
+          cp Release/rd-taystjk_*.dll        plugin/
+          cd plugin
+          7z a -r ../TaystJK-client-plugin-windows-${{ matrix.arch }}.zip *
 
       - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
         with:
@@ -154,13 +156,16 @@ jobs:
         shell: bash
         run: cmake --build . -j $(nproc)
 
-      - name: Install & Package
+      - name: Package
         shell: bash
         working-directory: ${{ github.workspace }}/build
         run: |
-          cmake --install .
+          mkdir -p plugin/taystjk
+          cp codemp/cgame/*.so               plugin/taystjk/
+          cp codemp/ui/*.so                  plugin/taystjk/
+          cp codemp/rd-vanilla/*.so          plugin/
           tar -czvf TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz \
-            -C install/JediAcademy/taystjk .
+            -C plugin .
 
       - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
         with:
