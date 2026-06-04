@@ -306,6 +306,7 @@ XCVAR_DEF( g_removeSpectatorPortals,	"0",			NULL,				CVAR_ARCHIVE,									qtrue
 XCVAR_DEF( g_consoleMOTD,				"",				NULL,				CVAR_ARCHIVE,									qfalse )
 XCVAR_DEF( g_centerMOTDTime,			"5",			NULL,				CVAR_ARCHIVE,									qfalse )
 XCVAR_DEF( g_centerMOTD,				"",				NULL,				CVAR_ARCHIVE,									qfalse )
+XCVAR_DEF( g_pluginURL,					"www.playja.pro",NULL,				CVAR_ARCHIVE,									qfalse )
 XCVAR_DEF( g_fakeClients,				"0",			NULL,				CVAR_ARCHIVE,									qfalse )
 XCVAR_DEF( g_lagIcon,					"0",			NULL,				CVAR_ARCHIVE,									qtrue )
 XCVAR_DEF( g_allowSamePlayerNames,		"0",			NULL,				CVAR_ARCHIVE,									qtrue )

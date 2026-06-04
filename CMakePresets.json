@@ -1,0 +1,65 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21 },
+  "configurePresets": [
+    {
+      "name": "client-plugin-base",
+      "hidden": true,
+      "description": "Shared settings for client-plugin builds.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":          "Release",
+        "BuildMPEngine":             "OFF",
+        "BuildMPDed":                "OFF",
+        "BuildMPGame":               "OFF",
+        "BuildMPCGame":              "ON",
+        "BuildMPUI":                 "ON",
+        "BuildMPRdVanilla":          "OFF",
+        "BuildMPRdVulkan":           "OFF",
+        "BuildMPRend2":              "OFF",
+        "BuildTests":                "OFF",
+        "BuildDiscordRichPresence":  "OFF"
+      }
+    },
+    {
+      "name": "client-plugin",
+      "displayName": "Client Plugin — Windows/Linux x64 (Ninja)",
+      "description": "Build cgame + ui DLLs for 64-bit. Drop into GameData/taystjk/.",
+      "inherits": "client-plugin-base",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-plugin"
+    },
+    {
+      "name": "client-plugin-win64",
+      "displayName": "Client Plugin — Windows x64 (MSVC)",
+      "description": "Build cgame + ui DLLs for 64-bit Windows (MSVC).",
+      "inherits": "client-plugin-base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "architecture": { "value": "x64", "strategy": "set" },
+      "binaryDir": "${sourceDir}/build-plugin-win64"
+    },
+    {
+      "name": "client-plugin-win32",
+      "displayName": "Client Plugin — Windows x86 (MSVC, for vanilla JKA)",
+      "description": "Build cgame + ui DLLs for 32-bit Windows — works with vanilla JKA and 32-bit OpenJK.",
+      "inherits": "client-plugin-base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "architecture": { "value": "Win32", "strategy": "set" },
+      "binaryDir": "${sourceDir}/build-plugin-win32"
+    },
+    {
+      "name": "full",
+      "displayName": "Full build (all targets)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "client-plugin",      "configurePreset": "client-plugin" },
+    { "name": "client-plugin-win64","configurePreset": "client-plugin-win64" },
+    { "name": "client-plugin-win32","configurePreset": "client-plugin-win32" },
+    { "name": "full",               "configurePreset": "full" }
+  ]
+}

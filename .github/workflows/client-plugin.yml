@@ -1,0 +1,191 @@
+name: client-plugin
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, beta]
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - "docs/*"
+  pull_request:
+    branches: [master, beta]
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - "docs/*"
+  release:
+    types: [published]
+
+# Builds just cgame + ui — the files players drop into GameData/taystjk/
+# to get TaystJK HUD features without installing the full TaystJK executable.
+# On release events the plugin zips are also attached to the GitHub Release.
+
+jobs:
+  msvc:
+    name: Windows ${{ matrix.arch }}
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        arch: [x86, x86_64]
+        include:
+          - arch: x86
+            platform: Win32
+            cgame_dll: cgamex86.dll
+            ui_dll:    uix86.dll
+          - arch: x86_64
+            platform: x64
+            cgame_dll: cgamex86_64.dll
+            ui_dll:    uix86_64.dll
+
+    steps:
+      - uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v4.2.2
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v4.2.2
+        if: github.event_name != 'pull_request'
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create Build Environment
+        run: cmake -E make_directory ${{ github.workspace }}/build
+
+      - name: Configure CMake
+        shell: bash
+        working-directory: ${{ github.workspace }}/build
+        run: |
+          cmake $GITHUB_WORKSPACE \
+            -A ${{ matrix.platform }} \
+            -DBuildPortableVersion=ON \
+            -DBuildMPEngine=OFF \
+            -DBuildMPDed=OFF \
+            -DBuildMPGame=OFF \
+            -DBuildMPCGame=ON \
+            -DBuildMPUI=ON \
+            -DBuildMPRdVanilla=OFF \
+            -DBuildMPRdVulkan=OFF \
+            -DBuildMPRend2=OFF \
+            -DBuildTests=OFF
+
+      - name: Build
+        working-directory: ${{ github.workspace }}/build
+        shell: bash
+        run: cmake --build . --config Release -j $NUMBER_OF_PROCESSORS
+
+      - name: Package
+        shell: bash
+        working-directory: ${{ github.workspace }}/build
+        run: |
+          mkdir plugin
+          cp Release/${{ matrix.cgame_dll }} plugin/
+          cp Release/${{ matrix.ui_dll }}    plugin/
+          cd plugin
+          7z a -r ../TaystJK-client-plugin-windows-${{ matrix.arch }}.zip *
+
+      - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
+        with:
+          name: TaystJK-client-plugin-windows-${{ matrix.arch }}
+          path: ${{ github.workspace }}/build/TaystJK-client-plugin-windows-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "${{ github.workspace }}/build/TaystJK-client-plugin-windows-${{ matrix.arch }}.zip" \
+            --clobber \
+            --repo "${{ github.repository }}"
+
+  ubuntu:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x86_64]
+        include:
+          - arch: x86
+            cgame_so: cgamei386.so
+            ui_so:    uii386.so
+          - arch: x86_64
+            cgame_so: cgamex86_64.so
+            ui_so:    uix86_64.so
+
+    steps:
+      - uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v4.2.2
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v4.2.2
+        if: github.event_name != 'pull_request'
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create Build Environment
+        run: |
+          if [ "${{ matrix.arch }}" == "x86" ]; then
+            sudo dpkg --add-architecture i386
+            sudo apt-get -qq update
+            sudo apt-get -y install gcc-multilib g++-multilib ninja-build
+          else
+            sudo apt-get -qq update
+            sudo apt-get install -y ninja-build
+          fi
+          cmake -E make_directory ${{ github.workspace }}/build
+
+      - name: Configure CMake
+        shell: bash
+        working-directory: ${{ github.workspace }}/build
+        run: |
+          OPTIONS="-DCMAKE_BUILD_TYPE=Release -DBuildPortableVersion=ON \
+            -DBuildMPEngine=OFF -DBuildMPDed=OFF -DBuildMPGame=OFF \
+            -DBuildMPCGame=ON -DBuildMPUI=ON \
+            -DBuildMPRdVanilla=OFF -DBuildMPRdVulkan=OFF -DBuildMPRend2=OFF \
+            -DBuildTests=OFF"
+          if [ "${{ matrix.arch }}" == "x86" ]; then
+            OPTIONS+=" -DCMAKE_TOOLCHAIN_FILE=cmake/Toolchains/linux-i686.cmake"
+          fi
+          cmake $GITHUB_WORKSPACE -G Ninja $OPTIONS
+
+      - name: Build
+        working-directory: ${{ github.workspace }}/build
+        shell: bash
+        run: cmake --build . -j $(nproc)
+
+      - name: Package
+        shell: bash
+        working-directory: ${{ github.workspace }}/build
+        run: |
+          mkdir plugin
+          cp "${{ matrix.cgame_so }}" plugin/
+          cp "${{ matrix.ui_so }}"    plugin/
+          tar -czvf TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz -C plugin .
+
+      - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
+        with:
+          name: TaystJK-client-plugin-linux-${{ matrix.arch }}
+          path: ${{ github.workspace }}/build/TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "${{ github.workspace }}/build/TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz" \
+            --clobber \
+            --repo "${{ github.repository }}"
