@@ -2058,8 +2058,8 @@ void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//J
 					}
 
 					if (pbMs == 0) {
-						// First crossing — neutral, show WR on line 2 if available
-						Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n%s\n\n\n\n\n\n\n\n\n", timeStr, wrStr);
+						// First crossing — just show the time, no WR comparison
+						Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n\n\n\n\n\n\n\n\n\n", timeStr);
 						Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s^5, avg ^3%i^5, max ^3%i^5 ups\n", mandatoryCheckpoint, timeStr, average, topSpd);
 						Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s^5, avg ^3%i^5, max ^3%i^5 ups", mandatoryCheckpoint, timeStr, average, topSpd);
 					} else {
