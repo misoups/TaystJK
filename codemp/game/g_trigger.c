@@ -2052,7 +2052,7 @@ void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//J
 							// Slower than WR — show diff, holder in white
 							char wrDeltaStr[32] = {0};
 							FormatCPTime(wrDiff, wrDeltaStr, sizeof(wrDeltaStr));
-							Com_sprintf(wrStr, sizeof(wrStr), " (^1+%s^7 %s)", wrDeltaStr, wrHolder);
+							Com_sprintf(wrStr, sizeof(wrStr), "^7 (^1+%s^7 %s)", wrDeltaStr, wrHolder);
 						}
 						// wrDiff < 0 (new WR) — wrStr stays empty, display as normal
 					}
