@@ -7711,7 +7711,7 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 	CALL_SQLITE (open (LOCAL_DB_PATH, & db));
 
 	// Use default DELETE journal mode — each operation opens/closes immediately so no contention
-	sqlite3_exec(db, "PRAGMA journal_mode=DELETE;", NULL, NULL, NULL);
+	sqlite3_exec(db, "PRAGMA journal_mode=WAL;", NULL, NULL, NULL);
 
 	//sqlite_exec(db, "VACUUM;", 0, 0);
 	//index LocalRun on RANK
