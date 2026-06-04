@@ -17,9 +17,9 @@ on:
   release:
     types: [published]
 
-# Builds just cgame + ui — the files players drop into GameData/taystjk/
-# to get TaystJK HUD features without installing the full TaystJK executable.
-# On release events the plugin zips are also attached to the GitHub Release.
+# Builds cgame + ui + rd-taystjk renderer — drop into GameData/taystjk/
+# and use with any JKA-compatible engine. Set cl_renderer "rd-taystjk"
+# to use the TaystJK renderer instead of the engine's built-in one.
 
 jobs:
   msvc:
@@ -31,12 +31,8 @@ jobs:
         include:
           - arch: x86
             platform: Win32
-            cgame_dll: cgamex86.dll
-            ui_dll:    uix86.dll
           - arch: x86_64
             platform: x64
-            cgame_dll: cgamex86_64.dll
-            ui_dll:    uix86_64.dll
 
     steps:
       - uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v4.2.2
@@ -61,13 +57,14 @@ jobs:
         run: |
           cmake $GITHUB_WORKSPACE \
             -A ${{ matrix.platform }} \
+            -DCMAKE_INSTALL_PREFIX=install \
             -DBuildPortableVersion=ON \
             -DBuildMPEngine=OFF \
             -DBuildMPDed=OFF \
             -DBuildMPGame=OFF \
             -DBuildMPCGame=ON \
             -DBuildMPUI=ON \
-            -DBuildMPRdVanilla=OFF \
+            -DBuildMPRdVanilla=ON \
             -DBuildMPRdVulkan=OFF \
             -DBuildMPRend2=OFF \
             -DBuildTests=OFF
@@ -77,15 +74,13 @@ jobs:
         shell: bash
         run: cmake --build . --config Release -j $NUMBER_OF_PROCESSORS
 
-      - name: Package
+      - name: Install & Package
         shell: bash
         working-directory: ${{ github.workspace }}/build
         run: |
-          mkdir plugin
-          cp Release/${{ matrix.cgame_dll }} plugin/
-          cp Release/${{ matrix.ui_dll }}    plugin/
-          cd plugin
-          7z a -r ../TaystJK-client-plugin-windows-${{ matrix.arch }}.zip *
+          cmake --install . --config Release
+          cd install/JediAcademy/taystjk
+          7z a -r ../../../TaystJK-client-plugin-windows-${{ matrix.arch }}.zip *
 
       - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
         with:
@@ -111,13 +106,6 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x86, x86_64]
-        include:
-          - arch: x86
-            cgame_so: cgamei386.so
-            ui_so:    uii386.so
-          - arch: x86_64
-            cgame_so: cgamex86_64.so
-            ui_so:    uix86_64.so
 
     steps:
       - uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v4.2.2
@@ -138,10 +126,11 @@ jobs:
           if [ "${{ matrix.arch }}" == "x86" ]; then
             sudo dpkg --add-architecture i386
             sudo apt-get -qq update
-            sudo apt-get -y install gcc-multilib g++-multilib ninja-build libjpeg-dev:i386 libpng-dev:i386 zlib1g-dev:i386
+            sudo apt-get -y install gcc-multilib g++-multilib ninja-build \
+              libjpeg-dev:i386 libpng-dev:i386 zlib1g-dev:i386 libsdl2-dev:i386
           else
             sudo apt-get -qq update
-            sudo apt-get install -y ninja-build libjpeg-dev libpng-dev zlib1g-dev
+            sudo apt-get install -y ninja-build libjpeg-dev libpng-dev zlib1g-dev libsdl2-dev
           fi
           cmake -E make_directory ${{ github.workspace }}/build
 
@@ -150,9 +139,10 @@ jobs:
         working-directory: ${{ github.workspace }}/build
         run: |
           OPTIONS="-DCMAKE_BUILD_TYPE=Release -DBuildPortableVersion=ON \
+            -DCMAKE_INSTALL_PREFIX=install \
             -DBuildMPEngine=OFF -DBuildMPDed=OFF -DBuildMPGame=OFF \
             -DBuildMPCGame=ON -DBuildMPUI=ON \
-            -DBuildMPRdVanilla=OFF -DBuildMPRdVulkan=OFF -DBuildMPRend2=OFF \
+            -DBuildMPRdVanilla=ON -DBuildMPRdVulkan=OFF -DBuildMPRend2=OFF \
             -DBuildTests=OFF"
           if [ "${{ matrix.arch }}" == "x86" ]; then
             OPTIONS+=" -DCMAKE_TOOLCHAIN_FILE=cmake/Toolchains/linux-i686.cmake"
@@ -164,14 +154,13 @@ jobs:
         shell: bash
         run: cmake --build . -j $(nproc)
 
-      - name: Package
+      - name: Install & Package
         shell: bash
         working-directory: ${{ github.workspace }}/build
         run: |
-          mkdir plugin
-          cp "codemp/cgame/${{ matrix.cgame_so }}" plugin/
-          cp "codemp/ui/${{ matrix.ui_so }}"       plugin/
-          tar -czvf TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz -C plugin .
+          cmake --install .
+          tar -czvf TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz \
+            -C install/JediAcademy/taystjk .
 
       - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
         with:

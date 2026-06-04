@@ -13,7 +13,7 @@
         "BuildMPGame":               "OFF",
         "BuildMPCGame":              "ON",
         "BuildMPUI":                 "ON",
-        "BuildMPRdVanilla":          "OFF",
+        "BuildMPRdVanilla":          "ON",
         "BuildMPRdVulkan":           "OFF",
         "BuildMPRend2":              "OFF",
         "BuildTests":                "OFF",
