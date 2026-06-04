@@ -2024,25 +2024,68 @@ void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//J
 				pbMs = player->client->pers.stats.bestCPTimes[cpIdx];
 				FormatCPTime(time, timeStr, sizeof(timeStr));
 
-				if (pbMs == 0) {
-					// First crossing — neutral
-					Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n\n\n\n\n\n\n\n\n\n", timeStr);
-					Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s^5, avg ^3%i^5, max ^3%i^5 ups\n", mandatoryCheckpoint, timeStr, average, topSpd);
-					Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s^5, avg ^3%i^5, max ^3%i^5 ups", mandatoryCheckpoint, timeStr, average, topSpd);
-				} else {
-					int deltaMs = time - pbMs;
-					int absDelta = deltaMs < 0 ? -deltaMs : deltaMs;
-					FormatCPTime(absDelta, deltaStr, sizeof(deltaStr));
-					if (deltaMs < 0) {
-						// Faster — green
-						Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n^2-%s\n\n\n\n\n\n\n\n", timeStr, deltaStr);
-						Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s ^2(-%s PB!)\n", mandatoryCheckpoint, timeStr, deltaStr);
-						Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s ^2(-%s PB!)", mandatoryCheckpoint, timeStr, deltaStr);
+				// Load WR cache if stale
+				if (player->client->pers.stats.bestCPWRCourseID != player->client->pers.stats.courseID + 1 ||
+				    player->client->pers.stats.bestCPWRStyle != style) {
+					memset(player->client->pers.stats.bestCPWRTimes,   0, sizeof(player->client->pers.stats.bestCPWRTimes));
+					memset(player->client->pers.stats.bestCPWRHolders, 0, sizeof(player->client->pers.stats.bestCPWRHolders));
+					G_LoadCheckpointWRs(mapName, player->client->pers.stats.courseID, style,
+					                    player->client->pers.stats.bestCPWRTimes,
+					                    player->client->pers.stats.bestCPWRHolders);
+					player->client->pers.stats.bestCPWRCourseID = player->client->pers.stats.courseID + 1;
+					player->client->pers.stats.bestCPWRStyle     = style;
+				}
+
+				{
+					int  wrMs     = player->client->pers.stats.bestCPWRTimes[cpIdx];
+					const char *wrHolder = player->client->pers.stats.bestCPWRHolders[cpIdx];
+					char wrStr[64] = {0};
+					char wrTimeStr[32] = {0};
+
+					if (wrMs > 0 && wrHolder[0]) {
+						int wrDiff = time - wrMs;
+						if (wrDiff == 0) {
+							// Tied WR — show absolute WR time and holder
+							FormatCPTime(wrMs, wrTimeStr, sizeof(wrTimeStr));
+							Com_sprintf(wrStr, sizeof(wrStr), " ^7(%s %s)", wrTimeStr, wrHolder);
+						} else if (wrDiff > 0) {
+							// Slower than WR — show diff, holder in white
+							char wrDeltaStr[32] = {0};
+							FormatCPTime(wrDiff, wrDeltaStr, sizeof(wrDeltaStr));
+							Com_sprintf(wrStr, sizeof(wrStr), " (^1+%s^7 %s)", wrDeltaStr, wrHolder);
+						}
+						// wrDiff < 0 (new WR) — wrStr stays empty, display as normal
+					}
+
+					if (pbMs == 0) {
+						// First crossing — neutral, show WR on line 2 if available
+						Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n%s\n\n\n\n\n\n\n\n\n", timeStr, wrStr);
+						Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s^5, avg ^3%i^5, max ^3%i^5 ups\n", mandatoryCheckpoint, timeStr, average, topSpd);
+						Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s^5, avg ^3%i^5, max ^3%i^5 ups", mandatoryCheckpoint, timeStr, average, topSpd);
 					} else {
-						// Slower — red
-						Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n^1+%s\n\n\n\n\n\n\n\n", timeStr, deltaStr);
-						Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s ^1(+%s)\n", mandatoryCheckpoint, timeStr, deltaStr);
-						Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s ^1(+%s)", mandatoryCheckpoint, timeStr, deltaStr);
+						int deltaMs  = time - pbMs;
+						int absDelta = deltaMs < 0 ? -deltaMs : deltaMs;
+						FormatCPTime(absDelta, deltaStr, sizeof(deltaStr));
+						if (deltaMs < 0) {
+							// New PB — green; no WR parenthesis if also new WR
+							Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n^2-%s%s\n\n\n\n\n\n\n\n", timeStr, deltaStr, wrStr);
+							Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s ^2(-%s PB!)\n", mandatoryCheckpoint, timeStr, deltaStr);
+							Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s ^2(-%s PB!)", mandatoryCheckpoint, timeStr, deltaStr);
+						} else {
+							// Slower — red
+							Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n^1+%s%s\n\n\n\n\n\n\n\n", timeStr, deltaStr, wrStr);
+							Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s ^1(+%s)\n", mandatoryCheckpoint, timeStr, deltaStr);
+							Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s ^1(+%s)", mandatoryCheckpoint, timeStr, deltaStr);
+						}
+					}
+
+					// Update WR if player is registered and strictly faster (ties don't displace original holder)
+					if (player->client->pers.userName[0] && (wrMs == 0 || time < wrMs)) {
+						player->client->pers.stats.bestCPWRTimes[cpIdx] = time;
+						Q_strncpyz(player->client->pers.stats.bestCPWRHolders[cpIdx], player->client->pers.userName,
+						           sizeof(player->client->pers.stats.bestCPWRHolders[cpIdx]));
+						G_SaveCheckpointWR(player->client->pers.userName, mapName,
+						                   player->client->pers.stats.courseID, cpIdx, style, time);
 					}
 				}
 
@@ -2062,7 +2105,7 @@ void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//J
 
 			// Send to player
 			if (player->client->pers.showCenterCP)
-				trap->SendServerCommand(player - g_entities, va("cp \"%s\"", cpCenterMsg));
+				trap->SendServerCommand(player - g_entities, va("cp \"%s\" race", cpCenterMsg));
 			if (player->client->pers.showConsoleCP)
 				trap->SendServerCommand(player - g_entities, va("print \"%s\"", cpConsoleMsg));
 			else if (player->client->pers.showChatCP)
@@ -2075,7 +2118,7 @@ void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//J
 				if (partner && partner->inuse && partner->client && (level.time - partner->client->pers.stats.lastCheckpointTime > 1000))
 				{
 					if (partner->client->pers.showCenterCP)
-						trap->SendServerCommand(partner - g_entities, va("cp \"%s\"", cpCenterMsg));
+						trap->SendServerCommand(partner - g_entities, va("cp \"%s\" race", cpCenterMsg));
 					if (partner->client->pers.showConsoleCP)
 						trap->SendServerCommand(partner - g_entities, va("print \"%s\"", cpConsoleMsg));
 					else if (partner->client->pers.showChatCP)
@@ -2090,7 +2133,7 @@ void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//J
 				if ((level.clients[i].sess.sessionTeam == TEAM_SPECTATOR) && (level.clients[i].ps.pm_flags & PMF_FOLLOW) && (level.clients[i].sess.spectatorClient == player->client->ps.clientNum))
 				{
 					if (level.clients[i].pers.showCenterCP)
-						trap->SendServerCommand(i, va("cp \"%s\"", cpCenterMsg));
+						trap->SendServerCommand(i, va("cp \"%s\" race", cpCenterMsg));
 					if (level.clients[i].pers.showChatCP)
 						trap->SendServerCommand(i, va("chat \"%s\"", cpChatMsg));
 				}

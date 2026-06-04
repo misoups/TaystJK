@@ -1211,6 +1211,7 @@ typedef struct cg_s {
 	int			centerPrintY;
 	char		centerPrint[1024];
 	int			centerPrintLines;
+	qboolean	centerPrintIsRace;
 
 	//idk
 	int			oldammo;
