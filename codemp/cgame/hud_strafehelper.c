@@ -1787,9 +1787,9 @@ void DF_DrawAccelMeter(void) {
 	float x = speedometerXPos;
 
 	if (cg_speedometer.integer & SPEEDOMETER_GROUNDSPEED)
-		x -= 88;
+		x -= 106;
 	else
-		x -= 52;
+		x -= 70;
 
 	CG_DrawRect((x - 0.75f) * cgs.widthRatioCoef,
 		cg_speedometerY.value - 10.75f,
@@ -1932,7 +1932,7 @@ japro - Draw the speedometer
 			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr3, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
 		}
 	}
-	speedometerXPos += 52;
+	speedometerXPos += 70;
 
 	if (cg_speedometer.integer & SPEEDOMETER_GROUNDSPEED || (cg_speedometer.integer && cg_speedometer.integer & SPEEDOMETER_JUMPS)) {
 		char speedStr4[32] = { 0 };
