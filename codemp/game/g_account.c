@@ -1155,24 +1155,44 @@ void G_SaveCheckpointWR(const char *username, const char *mapname, int courseid,
 	int s;
 
 	CALL_SQLITE(open(LOCAL_DB_PATH, &db));
-	// Only replace if strictly faster than existing record
-	sql = "INSERT INTO GlobalCheckpointWR (mapname, courseid, checkpoint_index, style, duration_ms, username) VALUES (?, ?, ?, ?, ?, ?)"
-	      " ON CONFLICT(mapname, courseid, checkpoint_index, style) DO UPDATE SET"
-	      "  duration_ms = excluded.duration_ms, username = excluded.username"
-	      "  WHERE excluded.duration_ms < duration_ms";
+
+	// Step 1: insert if no row exists yet for this checkpoint
+	sql = "INSERT OR IGNORE INTO GlobalCheckpointWR"
+	      " (mapname, courseid, checkpoint_index, style, duration_ms, username)"
+	      " VALUES (?, ?, ?, ?, ?, ?)";
 	CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
-	CALL_SQLITE(bind_text(stmt, 1, mapname,   -1, SQLITE_STATIC));
-	CALL_SQLITE(bind_int (stmt, 2, courseid));
-	CALL_SQLITE(bind_int (stmt, 3, cpIdx));
-	CALL_SQLITE(bind_int (stmt, 4, style));
-	CALL_SQLITE(bind_int (stmt, 5, duration_ms));
-	CALL_SQLITE(bind_text(stmt, 6, username,  -1, SQLITE_STATIC));
+	if (stmt) {
+		CALL_SQLITE(bind_text(stmt, 1, mapname,  -1, SQLITE_STATIC));
+		CALL_SQLITE(bind_int (stmt, 2, courseid));
+		CALL_SQLITE(bind_int (stmt, 3, cpIdx));
+		CALL_SQLITE(bind_int (stmt, 4, style));
+		CALL_SQLITE(bind_int (stmt, 5, duration_ms));
+		CALL_SQLITE(bind_text(stmt, 6, username, -1, SQLITE_STATIC));
+		s = sqlite3_step(stmt);
+		if (s != SQLITE_DONE)
+			G_ErrorPrint("ERROR: SQL Insert Failed (G_SaveCheckpointWR step 1)", s);
+		CALL_SQLITE(finalize(stmt));
+	}
 
-	s = sqlite3_step(stmt);
-	if (s != SQLITE_DONE)
-		G_ErrorPrint("ERROR: SQL Upsert Failed (G_SaveCheckpointWR)", s);
+	// Step 2: update only if the new time is strictly faster than what's stored
+	sql = "UPDATE GlobalCheckpointWR SET duration_ms = ?, username = ?"
+	      " WHERE mapname = ? AND courseid = ? AND checkpoint_index = ? AND style = ?"
+	      " AND duration_ms > ?";
+	CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+	if (stmt) {
+		CALL_SQLITE(bind_int (stmt, 1, duration_ms));
+		CALL_SQLITE(bind_text(stmt, 2, username, -1, SQLITE_STATIC));
+		CALL_SQLITE(bind_text(stmt, 3, mapname,  -1, SQLITE_STATIC));
+		CALL_SQLITE(bind_int (stmt, 4, courseid));
+		CALL_SQLITE(bind_int (stmt, 5, cpIdx));
+		CALL_SQLITE(bind_int (stmt, 6, style));
+		CALL_SQLITE(bind_int (stmt, 7, duration_ms));
+		s = sqlite3_step(stmt);
+		if (s != SQLITE_DONE)
+			G_ErrorPrint("ERROR: SQL Update Failed (G_SaveCheckpointWR step 2)", s);
+		CALL_SQLITE(finalize(stmt));
+	}
 
-	CALL_SQLITE(finalize(stmt));
 	CALL_SQLITE(close(db));
 }
 
