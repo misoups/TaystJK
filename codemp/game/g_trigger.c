@@ -2042,7 +2042,7 @@ void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//J
 					char wrStr[64] = {0};
 					char wrTimeStr[32] = {0};
 
-					if (wrMs > 0 && wrHolder[0]) {
+					if (wrMs > 0 && wrHolder[0] && Q_stricmp(wrHolder, player->client->pers.userName)) {
 						int wrDiff = time - wrMs;
 						if (wrDiff == 0) {
 							// Tied WR — show absolute WR time and holder
