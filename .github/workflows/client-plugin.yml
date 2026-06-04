@@ -138,10 +138,10 @@ jobs:
           if [ "${{ matrix.arch }}" == "x86" ]; then
             sudo dpkg --add-architecture i386
             sudo apt-get -qq update
-            sudo apt-get -y install gcc-multilib g++-multilib ninja-build
+            sudo apt-get -y install gcc-multilib g++-multilib ninja-build libjpeg-dev:i386 libpng-dev:i386 zlib1g-dev:i386
           else
             sudo apt-get -qq update
-            sudo apt-get install -y ninja-build
+            sudo apt-get install -y ninja-build libjpeg-dev libpng-dev zlib1g-dev
           fi
           cmake -E make_directory ${{ github.workspace }}/build
 
@@ -169,8 +169,8 @@ jobs:
         working-directory: ${{ github.workspace }}/build
         run: |
           mkdir plugin
-          cp "${{ matrix.cgame_so }}" plugin/
-          cp "${{ matrix.ui_so }}"    plugin/
+          cp "codemp/cgame/${{ matrix.cgame_so }}" plugin/
+          cp "codemp/ui/${{ matrix.ui_so }}"       plugin/
           tar -czvf TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz -C plugin .
 
       - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
