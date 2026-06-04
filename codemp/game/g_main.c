@@ -56,6 +56,7 @@ void G_RunFrame					( int levelTime );
 void G_ShutdownGame				( int restart );
 void CheckExitRules				( void );
 void G_ROFF_NotetrackCallback	( gentity_t *cent, const char *notetrack);
+void G_UserCmdBuffer_NewFrame	( void );
 
 extern stringID_table_t setTable[];
 
@@ -373,6 +374,7 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	// initialize all clients for this game
 	level.maxclients = sv_maxclients.integer;
 	memset( g_clients, 0, MAX_CLIENTS * sizeof(g_clients[0]) );
+	memset( userCmdBuffer, 0, sizeof(userCmdBuffer) );
 	level.clients = g_clients;
 
 	// set client fields on player ents
@@ -3671,6 +3673,9 @@ void G_RunFrame( int levelTime ) {
 	level.framenum++;
 	level.previousTime = level.time;
 	level.time = levelTime;
+	level.frameTimeMsec = level.time - level.previousTime;
+
+	G_UserCmdBuffer_NewFrame();
 
 	G_CrossServerPoll( levelTime );
 

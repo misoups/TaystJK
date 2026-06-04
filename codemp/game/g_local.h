@@ -800,6 +800,32 @@ typedef struct {//JAPRO - Serverside - Stats
 	int  bestCPWRStyle;            // movement style these WRs were loaded for
 } stats_t;
 
+// -----------------------------------------------------------------------
+// userCmdBuffer — per-client lag-smoothing circular buffer
+// Absorbs bursty packet bursts from lagging clients, distributing command
+// execution evenly across frames rather than all at once.
+// -----------------------------------------------------------------------
+#define USERCMD_BUFFER_MAX               1024
+#define USERCMD_BUFFER_CRITICAL_ZONE     128
+#define USERCMD_BUFFER_MAX_DELAY         800
+#define USERCMD_BUFFER_MAX_FRAMEADVANCE_MAX 100
+#define USERCMD_BUFFER_MAX_BLOCKING      (USERCMD_BUFFER_MAX - USERCMD_BUFFER_CRITICAL_ZONE)
+
+typedef enum {
+	GETUSERCMD_NOADVANCE,
+	GETUSERCMD_ADVANCECLIENTTHINK,
+	GETUSERCMD_ADVANCERUNCLIENT,
+} getUserCmdType_t;
+
+typedef struct userCmdBuffer_s {
+	usercmd_t   buf[USERCMD_BUFFER_MAX];
+	int         nextBufferIndex;
+	int         nextToExecute;
+	int         msecThisFrame;
+} userCmdBuffer_t;
+
+extern userCmdBuffer_t userCmdBuffer[MAX_CLIENTS];
+
 // client data that stays across multiple respawns, but is cleared
 // on each level change or team change at ClientBegin()
 typedef struct clientPersistant_s {
@@ -1397,6 +1423,7 @@ typedef struct level_locals_s {
 	int			framenum;
 	int			time;					// in msec
 	int			previousTime;			// so movers can back up when blocked
+	int			frameTimeMsec;			// time elapsed since last frame (level.time - level.previousTime)
 
 	int			startTime;				// level.time the map was started
 

@@ -30,6 +30,113 @@ extern void Jedi_Cloak( gentity_t *self );
 extern void Jedi_Decloak( gentity_t *self );
 extern void G_TestLine(vec3_t start, vec3_t end, int color, int time);
 
+// -----------------------------------------------------------------------
+// userCmdBuffer global
+// -----------------------------------------------------------------------
+userCmdBuffer_t userCmdBuffer[MAX_CLIENTS];
+
+void G_UserCmdBuffer_NewFrame(void) {
+	int i;
+	for (i = 0; i < level.maxclients; i++)
+		userCmdBuffer[i].msecThisFrame = 0;
+}
+
+void G_ResetUserCmdStore(int clientNum) {
+	userCmdBuffer[clientNum].nextBufferIndex =
+	userCmdBuffer[clientNum].nextToExecute   =
+	userCmdBuffer[clientNum].msecThisFrame   = 0;
+}
+
+// Fetch the next user command from the per-client circular buffer.
+// Internally calls trap->GetUsercmd to pull the latest cmd from the engine.
+// Returns qtrue if the buffer was advanced (i.e. a new cmd should be executed).
+qboolean G_GetUserCmd(int clientNum, usercmd_t *ucmd, getUserCmdType_t advance) {
+	usercmd_t *newCmd = &userCmdBuffer[clientNum].buf[userCmdBuffer[clientNum].nextBufferIndex % USERCMD_BUFFER_MAX];
+	usercmd_t *oldCmd = NULL;
+	gentity_t *userEnt = (clientNum >= 0 && clientNum < MAX_CLIENTS) ? g_entities + clientNum : NULL;
+	qboolean superSmooth = g_userCmdBufferSmoothen.integer > 1 ||
+	                       (g_userCmdBufferSmoothen.integer == 1 && userEnt && userEnt->client && userEnt->client->sess.raceMode);
+	int baseFrameAdvanceMultiplier = superSmooth ? 2 : 5;
+	int maxFrameAdvance;
+	qboolean didAdvance = qfalse;
+	int currentServerTime;
+
+	if (level.frameTimeMsec) {
+		int candidate = level.frameTimeMsec * baseFrameAdvanceMultiplier;
+		if (candidate > USERCMD_BUFFER_MAX_FRAMEADVANCE_MAX) {
+			int doubled = level.frameTimeMsec * 2;
+			maxFrameAdvance = doubled > USERCMD_BUFFER_MAX_FRAMEADVANCE_MAX ? doubled : USERCMD_BUFFER_MAX_FRAMEADVANCE_MAX;
+		} else {
+			maxFrameAdvance = candidate;
+		}
+	} else {
+		maxFrameAdvance = INT_MAX;
+	}
+
+	// pass-through when buffering is off and no cmds have been stored yet
+	if (!g_userCmdBuffer.integer && userCmdBuffer[clientNum].nextBufferIndex <= 1) {
+		trap->GetUsercmd(clientNum, ucmd);
+		return qfalse;
+	}
+
+	if (userCmdBuffer[clientNum].nextBufferIndex > 0) {
+		oldCmd = &userCmdBuffer[clientNum].buf[(userCmdBuffer[clientNum].nextBufferIndex - 1) % USERCMD_BUFFER_MAX];
+	} else {
+		didAdvance = qtrue;
+	}
+
+	// pull latest cmd from engine; save only if timestamp differs from last saved
+	trap->GetUsercmd(clientNum, newCmd);
+	if (!oldCmd || newCmd->serverTime != oldCmd->serverTime)
+		userCmdBuffer[clientNum].nextBufferIndex++;
+
+	currentServerTime = newCmd->serverTime;
+
+	// overflow: buffer full, force-skip to make room
+	if ((userCmdBuffer[clientNum].nextBufferIndex - userCmdBuffer[clientNum].nextToExecute) > USERCMD_BUFFER_MAX) {
+		trap->SendServerCommand(clientNum, "print \"^1Server: usercmd buffer overflowed. Very bad connection?\n\"");
+		trap->Print(va("^1Usercmd buffer overflow for client %d\n", clientNum));
+		userCmdBuffer[clientNum].nextToExecute = userCmdBuffer[clientNum].nextBufferIndex - USERCMD_BUFFER_MAX;
+		didAdvance = qtrue;
+	}
+
+	// decide whether to advance the read pointer
+	if (!didAdvance && advance && userCmdBuffer[clientNum].nextToExecute < (userCmdBuffer[clientNum].nextBufferIndex - 1)) {
+		int nextMsec;
+		qboolean superSmoothAllows;
+		oldCmd = &userCmdBuffer[clientNum].buf[ userCmdBuffer[clientNum].nextToExecute      % USERCMD_BUFFER_MAX];
+		newCmd = &userCmdBuffer[clientNum].buf[(userCmdBuffer[clientNum].nextToExecute + 1) % USERCMD_BUFFER_MAX];
+		nextMsec = newCmd->serverTime - oldCmd->serverTime;
+		// in superSmooth mode always keep 4 cmds buffered (like GPU double-buffering)
+		superSmoothAllows = !superSmooth || (userCmdBuffer[clientNum].nextBufferIndex - userCmdBuffer[clientNum].nextToExecute) > 4;
+
+		if (nextMsec <= 0                                                                           // weird timestamp; just go
+		    || !userCmdBuffer[clientNum].msecThisFrame                                             // first cmd this frame; just go
+		    || ((userCmdBuffer[clientNum].msecThisFrame + nextMsec) < maxFrameAdvance && superSmoothAllows) // within budget; go
+		    || (currentServerTime - oldCmd->serverTime) > USERCMD_BUFFER_MAX_DELAY                // delay too large; force go
+		    || (userCmdBuffer[clientNum].nextBufferIndex - userCmdBuffer[clientNum].nextToExecute) > USERCMD_BUFFER_MAX_BLOCKING // near overflow; go
+		    || !g_userCmdBuffer.integer) {
+			userCmdBuffer[clientNum].nextToExecute++;
+			userCmdBuffer[clientNum].msecThisFrame += nextMsec;
+			didAdvance = qtrue;
+		}
+	}
+
+	newCmd = &userCmdBuffer[clientNum].buf[userCmdBuffer[clientNum].nextToExecute % USERCMD_BUFFER_MAX];
+	if (didAdvance || !advance)
+		*ucmd = *newCmd;
+
+	// buffer drained — compact it
+	if (userCmdBuffer[clientNum].nextToExecute && userCmdBuffer[clientNum].nextToExecute == (userCmdBuffer[clientNum].nextBufferIndex - 1)) {
+		if (userCmdBuffer[clientNum].nextToExecute % USERCMD_BUFFER_MAX)
+			userCmdBuffer[clientNum].buf[0] = *newCmd;
+		userCmdBuffer[clientNum].nextToExecute  = 0;
+		userCmdBuffer[clientNum].nextBufferIndex = 1;
+	}
+
+	return didAdvance;
+}
+
 static int frametime = 25;
 static int historytime = 250;
 static int numTrails = 10; //historytime/frametime; 
@@ -6013,10 +6120,6 @@ A new command has arrived from the client
 void ClientThink( int clientNum, usercmd_t *ucmd ) {
 	gentity_t *ent;
 	ent = g_entities + clientNum;
-	if (clientNum < MAX_CLIENTS)
-	{
-		trap->GetUsercmd( clientNum, &ent->client->pers.cmd );
-	}
 
 	// mark the time we got info, so we can display the
 	// phone jack if they don't get any for a while
@@ -6024,6 +6127,7 @@ void ClientThink( int clientNum, usercmd_t *ucmd ) {
 
 	if (ucmd)
 	{
+		// vehicle/NPC override — cmd is provided externally, bypass buffer
 		ent->client->pers.cmd = *ucmd; //Somehow this crashes the server if you try to board a vehicle without it having spawned yet...? somtimes?
 	}
 
@@ -6054,7 +6158,18 @@ void ClientThink( int clientNum, usercmd_t *ucmd ) {
 	}
 */
 	if ( !(ent->r.svFlags & SVF_BOT) && !g_synchronousClients.integer ) {
-		ClientThink_real( ent );
+		if (g_userCmdBuffer.integer && !ucmd) {
+			// buffer loop: execute as many buffered cmds as the frame budget allows
+			int index = 0;
+			while (G_GetUserCmd(clientNum, &ent->client->pers.cmd, GETUSERCMD_ADVANCECLIENTTHINK) || !index) {
+				ClientThink_real(ent);
+				index++;
+			}
+		} else {
+			if (clientNum < MAX_CLIENTS && !ucmd)
+				trap->GetUsercmd(clientNum, &ent->client->pers.cmd);
+			ClientThink_real( ent );
+		}
 	}
 	// vehicles are clients and when running synchronous they still need to think here
 	// so special case them.
@@ -6187,8 +6302,13 @@ void G_RunClient( gentity_t *ent ) {
 
 	ent->client->pers.lastCmd = ent->client->pers.cmd; //this should be after force update rate .... because..?
 
-
 	if ( !(ent->r.svFlags & SVF_BOT) && !g_synchronousClients.integer ) {
+		// drain any buffered cmds that ClientThink couldn't fit in its frame budget
+		if (g_userCmdBuffer.integer && ent->client->pers.connected == CON_CONNECTED) {
+			while (G_GetUserCmd(ent - g_entities, &ent->client->pers.cmd, GETUSERCMD_ADVANCERUNCLIENT)) {
+				ClientThink_real(ent);
+			}
+		}
 		return;
 	}
 	ent->client->pers.cmd.serverTime = level.time;
