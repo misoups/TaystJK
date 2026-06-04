@@ -793,6 +793,11 @@ typedef struct {//JAPRO - Serverside - Stats
 	int bestCPTimes[32]; // best checkpoint split times in ms; 0 = not yet set
 	int bestCPCourseID;  // courseID+1 that bestCPTimes belong to; 0 = uninitialized
 	int bestCPStyle;     // movement style these PBs were loaded for
+
+	int  bestCPWRTimes[32];        // all-time WR split times in ms; 0 = not set
+	char bestCPWRHolders[32][16];  // registered username of WR holder per checkpoint
+	int  bestCPWRCourseID;         // courseID+1 for WR cache validity; 0 = uninitialized
+	int  bestCPWRStyle;            // movement style these WRs were loaded for
 } stats_t;
 
 // client data that stays across multiple respawns, but is cleared
@@ -1782,6 +1787,8 @@ void trigger_teleporter_touch (gentity_t *self, gentity_t *other, trace_t *trace
 //
 void G_LoadCheckpointPBs(const char *username, const char *mapname, int courseid, int style, int bestTimes[32]);
 void G_SaveCheckpointPB(const char *username, const char *mapname, int courseid, int cpIdx, int style, int duration_ms);
+void G_LoadCheckpointWRs(const char *mapname, int courseid, int style, int wrTimes[32], char wrHolders[32][16]);
+void G_SaveCheckpointWR(const char *username, const char *mapname, int courseid, int cpIdx, int style, int duration_ms);
 
 
 //

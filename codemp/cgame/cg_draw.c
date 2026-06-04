@@ -7137,7 +7137,7 @@ static void CG_DrawCenterString( void ) {
 	int		x, y, w;
 	int		h;
 	float	*color;
-	float	scale = cg_centerSize.value;//1.0; //0.5
+	float	scale = cg.centerPrintIsRace ? cg_centerSizeRace.value : cg_centerSize.value;
 
 	if (scale < 0)
 		scale = 0;

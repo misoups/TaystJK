@@ -207,6 +207,7 @@ XCVAR_DEF( cg_specCameraMode,					"1",	NULL,					CVAR_ARCHIVE ) //ethan wants th
 
 XCVAR_DEF( cg_centerHeight,						"0",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_centerSize,						"1",	NULL,					CVAR_ARCHIVE )
+XCVAR_DEF( cg_centerSizeRace,					"0.8",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_fkDuration,						"50",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_fkFirstJumpDuration,				"0",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_fkSecondJumpDelay,				"0",	NULL,					CVAR_ARCHIVE )

@@ -1633,8 +1633,10 @@ static void CG_RestoreClientGhoul_f( void ) {
 
 static void CG_CenterPrint_f( void ) {
 	char strEd[MAX_STRINGED_SV_STRING] = {0};
+	const char *type = CG_Argv( 2 );
 
 	CG_CheckSVStringEdRef( strEd, CG_Argv( 1 ) );
+	cg.centerPrintIsRace = (type[0] && !Q_stricmp(type, "race"));
 	CG_CenterPrint( strEd, SCREEN_HEIGHT * 0.30, BIGCHAR_WIDTH );
 
 	if ((cg_logChat.integer & JAPRO_CHATLOG_ENABLE) && (cg_logChat.integer & JAPRO_CHATLOG_CENTERPRINT))

@@ -1118,6 +1118,64 @@ void G_SaveCheckpointPB(const char *username, const char *mapname, int courseid,
 	CALL_SQLITE(close(db));
 }
 
+void G_LoadCheckpointWRs(const char *mapname, int courseid, int style, int wrTimes[32], char wrHolders[32][16]) {
+	sqlite3 *db;
+	const char *sql;
+	sqlite3_stmt *stmt;
+	int s;
+
+	CALL_SQLITE(open(LOCAL_DB_PATH, &db));
+	sql = "SELECT checkpoint_index, duration_ms, username FROM GlobalCheckpointWR WHERE mapname = ? AND courseid = ? AND style = ?";
+	CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+	CALL_SQLITE(bind_text(stmt, 1, mapname, -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_int(stmt, 2, courseid));
+	CALL_SQLITE(bind_int(stmt, 3, style));
+
+	while ((s = sqlite3_step(stmt)) == SQLITE_ROW) {
+		int cpIdx = sqlite3_column_int(stmt, 0);
+		int ms    = sqlite3_column_int(stmt, 1);
+		const char *holder = (const char *)sqlite3_column_text(stmt, 2);
+		if (cpIdx >= 0 && cpIdx < 32) {
+			wrTimes[cpIdx] = ms;
+			if (holder)
+				Q_strncpyz(wrHolders[cpIdx], holder, 16);
+		}
+	}
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Select Failed (G_LoadCheckpointWRs)", s);
+
+	CALL_SQLITE(finalize(stmt));
+	CALL_SQLITE(close(db));
+}
+
+void G_SaveCheckpointWR(const char *username, const char *mapname, int courseid, int cpIdx, int style, int duration_ms) {
+	sqlite3 *db;
+	const char *sql;
+	sqlite3_stmt *stmt;
+	int s;
+
+	CALL_SQLITE(open(LOCAL_DB_PATH, &db));
+	// Only replace if strictly faster than existing record
+	sql = "INSERT INTO GlobalCheckpointWR (mapname, courseid, checkpoint_index, style, duration_ms, username) VALUES (?, ?, ?, ?, ?, ?)"
+	      " ON CONFLICT(mapname, courseid, checkpoint_index, style) DO UPDATE SET"
+	      "  duration_ms = excluded.duration_ms, username = excluded.username"
+	      "  WHERE excluded.duration_ms < duration_ms";
+	CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+	CALL_SQLITE(bind_text(stmt, 1, mapname,   -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_int (stmt, 2, courseid));
+	CALL_SQLITE(bind_int (stmt, 3, cpIdx));
+	CALL_SQLITE(bind_int (stmt, 4, style));
+	CALL_SQLITE(bind_int (stmt, 5, duration_ms));
+	CALL_SQLITE(bind_text(stmt, 6, username,  -1, SQLITE_STATIC));
+
+	s = sqlite3_step(stmt);
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Upsert Failed (G_SaveCheckpointWR)", s);
+
+	CALL_SQLITE(finalize(stmt));
+	CALL_SQLITE(close(db));
+}
+
 #if 0
 void G_GetRaceScore(int id, char *username, char *coursename, int style, int season, int time, sqlite3 * db) { //Need to use transactions here or something
 	char * sql;
@@ -7690,6 +7748,13 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 	s = sqlite3_step(stmt);
 	if (s != SQLITE_DONE)
 		G_ErrorPrint("ERROR: SQL Create Failed (InitGameAccountStuff LocalCheckpointPB)", s);
+	CALL_SQLITE (finalize(stmt));
+
+	sql = "CREATE TABLE IF NOT EXISTS GlobalCheckpointWR(mapname VARCHAR(40), courseid INTEGER, checkpoint_index INTEGER, style INTEGER, duration_ms INTEGER, username VARCHAR(16), PRIMARY KEY(mapname, courseid, checkpoint_index, style))";
+	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+	s = sqlite3_step(stmt);
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Create Failed (InitGameAccountStuff GlobalCheckpointWR)", s);
 	CALL_SQLITE (finalize(stmt));
 
 	sql = "CREATE TABLE IF NOT EXISTS LocalRunLog(id INTEGER PRIMARY KEY, username VARCHAR(16) DEFAULT '', playername VARCHAR(36) NOT NULL DEFAULT '', coursename VARCHAR(40) NOT NULL, style UNSIGNED TINYINT NOT NULL, duration_ms UNSIGNED INTEGER NOT NULL, end_time UNSIGNED INTEGER NOT NULL)";
