@@ -1247,8 +1247,11 @@ void SV_Frame( int msec ) {
 
 	sv.timeResidual += msec;
 
-	// Lag spike detection: log when the server missed its frame deadline significantly
-	if ( sv_lagSpikeThreshold->integer > 0 && msec >= sv_lagSpikeThreshold->integer ) {
+	// Lag spike detection: log when the server exceeded its frame deadline by the threshold.
+	// Compare against (frameMsec + threshold) so hibernation frames (500ms expected) don't
+	// trigger false positives, and the threshold always means "extra ms beyond expected".
+	if ( sv_lagSpikeThreshold->integer > 0 && !svs.hibernation.enabled &&
+		 msec >= frameMsec + sv_lagSpikeThreshold->integer ) {
 		int missedFrames = msec / frameMsec;
 
 		// Count connected human players for context
