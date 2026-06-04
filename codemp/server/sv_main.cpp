@@ -91,6 +91,9 @@ cvar_t	*sv_pingFix;
 cvar_t	*sv_hibernateTime;
 cvar_t	*sv_hibernateFPS;
 
+cvar_t	*sv_lagSpikeThreshold;	// ms above expected frame time to consider a lag spike (0=disabled)
+cvar_t	*sv_lagSpikeLog;		// file to write lag spike records to (empty = console only)
+
 #ifdef DEDICATED
 cvar_t	*sv_antiDST;
 #endif
@@ -1243,6 +1246,43 @@ void SV_Frame( int msec ) {
 	}
 
 	sv.timeResidual += msec;
+
+	// Lag spike detection: log when the server missed its frame deadline significantly
+	if ( sv_lagSpikeThreshold->integer > 0 && msec >= sv_lagSpikeThreshold->integer ) {
+		int missedFrames = msec / frameMsec;
+
+		// Count connected human players for context
+		int numPlayers = 0;
+		for ( int i = 0; i < sv_maxclients->integer; i++ ) {
+			if ( svs.clients[i].state >= CS_ACTIVE &&
+				 svs.clients[i].netchan.remoteAddress.type != NA_BOT ) {
+				numPlayers++;
+			}
+		}
+
+		const char *mapname = Cvar_VariableString( "mapname" );
+
+		Com_Printf( "LAG SPIKE: %dms (expected %dms, ~%d missed frames, %d players, map: %s)\n",
+			msec, frameMsec, missedFrames, numPlayers, mapname );
+
+		if ( sv_lagSpikeLog->string[0] ) {
+			time_t t = time( NULL );
+			struct tm *lt = localtime( &t );
+			char timeStr[32];
+			strftime( timeStr, sizeof( timeStr ), "%Y-%m-%d %H:%M:%S", lt );
+
+			char buf[256];
+			Com_sprintf( buf, sizeof( buf ),
+				"[%s] SPIKE %dms (~%d frames, %d players, map: %s)\n",
+				timeStr, msec, missedFrames, numPlayers, mapname );
+
+			fileHandle_t f;
+			if ( FS_FOpenFileByMode( sv_lagSpikeLog->string, &f, FS_APPEND_SYNC ) >= 0 ) {
+				FS_Write( buf, strlen( buf ), f );
+				FS_FCloseFile( f );
+			}
+		}
+	}
 
 	if (!com_dedicated->integer) SV_BotFrame( sv.time + sv.timeResidual );
 

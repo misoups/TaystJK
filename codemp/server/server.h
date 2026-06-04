@@ -337,6 +337,9 @@ extern	cvar_t	*sv_pingFix;
 extern	cvar_t	*sv_hibernateTime;
 extern	cvar_t	*sv_hibernateFPS;
 
+extern	cvar_t	*sv_lagSpikeThreshold;
+extern	cvar_t	*sv_lagSpikeLog;
+
 #ifdef DEDICATED
 extern	cvar_t	*sv_antiDST;
 #endif

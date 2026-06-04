@@ -1067,6 +1067,9 @@ void SV_Init (void) {
 	sv_hibernateFPS = Cvar_Get("sv_hibernateFPS", "2", CVAR_ARCHIVE_ND, "FPS during hibernation mode");
 	Cvar_CheckRange(sv_hibernateFPS, 1, 1000, qtrue);
 
+	sv_lagSpikeThreshold = Cvar_Get("sv_lagSpikeThreshold", "150", CVAR_ARCHIVE_ND, "Log lag spikes longer than this many ms (0=disabled)");
+	sv_lagSpikeLog = Cvar_Get("sv_lagSpikeLog", "lagspikes.log", CVAR_ARCHIVE_ND, "File to write lag spike records to (empty=console only)");
+
 #ifdef DEDICATED
 	sv_antiDST = Cvar_Get("sv_antiDST", "1", CVAR_NONE, "Attempts to detect and kick players injecting or using DST");
 #endif
