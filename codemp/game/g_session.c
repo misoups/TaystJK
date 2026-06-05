@@ -47,7 +47,7 @@ void G_WriteClientSessionData( gclient_t *client )
 {
 	char		s[MAX_CVAR_VALUE_STRING] = {0},
 				siegeClass[64] = {0}, IP[NET_ADDRSTRMAXLEN] = {0},
-				userName[16] = {0};
+				clanpass[64] = {0}, userName[16] = {0};
 	const char	*var;
 	int			i = 0;
 
@@ -94,7 +94,12 @@ void G_WriteClientSessionData( gclient_t *client )
 	Q_strcat( s, sizeof( s ), va( "%i ", client->sess.accountFlags) );
 
 	Q_strcat( s, sizeof( s ), va( "%i ", client->sess.sayteammod ) );
-	Q_strcat( s, sizeof( s ), va( "%s ", client->sess.clanpass ) );
+
+	// clanpass: use "none" placeholder when empty so the field count stays stable
+	Q_strncpyz( clanpass, client->sess.clanpass, sizeof( clanpass ) );
+	if ( !clanpass[0] )
+		Q_strncpyz( clanpass, "none", sizeof( clanpass ) );
+	Q_strcat( s, sizeof( s ), va( "%s ", clanpass ) );
 
 	// Persist login state across map changes
 	Q_strncpyz( userName, client->pers.userName, sizeof( userName ) );
@@ -185,6 +190,10 @@ void G_ReadSessionData( gclient_t *client )
 	client->ps.fd.saberAnimLevel = client->sess.saberLevel;
 	client->ps.fd.saberDrawAnimLevel = client->sess.saberLevel;
 	client->ps.fd.forcePowerSelected = client->sess.selectedFP;
+
+	// Strip clanpass "none" placeholder written when it was empty
+	if ( !Q_stricmp( client->sess.clanpass, "none" ) )
+		client->sess.clanpass[0] = '\0';
 
 	// Restore login state if one was saved
 	for ( i=0; savedUserName[i]; i++ ) {
