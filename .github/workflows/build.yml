@@ -513,10 +513,10 @@ jobs:
 
           RELEASE_BODY="## Commits"
 
-          if [ -n "$LATEST_RELEASE_COMMIT" ] && git rev-parse --quiet --verify "$LATEST_RELEASE_COMMIT^{commit}" >/dev/null 2>&1; then
+          if [ -n "$LATEST_RELEASE_COMMIT" ] && git merge-base --is-ancestor "$LATEST_RELEASE_COMMIT" HEAD 2>/dev/null; then
             COMMITS=$(git log $LATEST_RELEASE_COMMIT..HEAD --pretty=format:"%h|%s|%an")
           else
-            COMMITS=$(git log -3 --pretty=format:"%h|%s|%an")
+            COMMITS=$(git log -10 --pretty=format:"%h|%s|%an")
           fi
           
           while IFS='|' read -r hash subject author; do
