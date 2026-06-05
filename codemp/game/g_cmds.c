@@ -7639,6 +7639,7 @@ void Cmd_RaceTele_f(gentity_t *ent, qboolean useForce)
 		origin[2] = g_entities[clientid].client->ps.origin[2] + 96;
 
 		AmTeleportPlayer( ent, origin, angles, qtrue, qtrue, qfalse );
+		ent->client->noclipUsed = qtrue;
 		return;
 	}
 
@@ -7656,6 +7657,7 @@ void Cmd_RaceTele_f(gentity_t *ent, qboolean useForce)
 		origin[2] = atoi(z);
 
 		AmTeleportPlayer( ent, origin, angles, qtrue, qtrue, qfalse );
+		ent->client->noclipUsed = qtrue;
 		return;
 	}
 }
