@@ -26,7 +26,6 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "qcommon/stringed_ingame.h"
 
-cvar_t *r_fontSharpness;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -1790,7 +1789,6 @@ void R_InitFonts(void)
 	g_iCurrentFontIndex = 1;			// entry 0 is reserved for "missing/invalid"
 	g_iNonScaledCharRange = INT_MAX;	// default all chars to have no special scaling (other than user supplied)
 
-	r_fontSharpness = ri.Cvar_Get( "r_fontSharpness", "0", CVAR_ARCHIVE|CVAR_LATCH, "Font texture filtering: 0=GL_LINEAR (smooth), 1=GL_NEAREST (sharp/crisp). Requires vid_restart." );
 
 	cl_coloredTextShadows = ri.Cvar_Get("cl_coloredTextShadows", "0", CVAR_ARCHIVE, "Toggle JK2 1.02-style colored text shadows");
 }

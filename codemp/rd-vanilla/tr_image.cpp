@@ -1060,15 +1060,6 @@ image_t *R_CreateImage( const char *name, const byte *pic, int width, int height
 	qglTexParameterf( uiTarget, GL_TEXTURE_WRAP_S, glWrapClampMode );
 	qglTexParameterf( uiTarget, GL_TEXTURE_WRAP_T, glWrapClampMode );
 
-	// r_fontSharpness 1: swap font textures to GL_NEAREST for crisp pixel rendering.
-	// Only applies to the fonts/ directory — other noMip textures (HUD, menus) are unaffected.
-	extern cvar_t *r_fontSharpness;
-	if ( !mipmap && r_fontSharpness && r_fontSharpness->integer && !Q_stricmpn(name, "fonts/", 6) )
-	{
-		qglTexParameterf( uiTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-		qglTexParameterf( uiTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-	}
-
 	qglBindTexture( uiTarget, 0 );	//jfm: i don't know why this is here, but it breaks lightmaps when there's only 1
 	glState.currenttextures[glState.currenttmu] = 0;	//mark it not bound
 
