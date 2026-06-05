@@ -259,7 +259,7 @@ static int GetFlipkick(playerState_t *ps) {
 					return 0;
 				}
 			}
-			if (cgs.jcinfo & JAPRO_CINFO_FLIPKICK) {
+			if ((cgs.jcinfo & JAPRO_CINFO_FLIPKICK) || (cgs.taystJKinfo & TAYSTJK_INFO_FLIPKICK)) {
 				if (cgs.jcinfo & JAPRO_CINFO_FIXSIDEKICK)
 					return 3;
 				return 2; //1 ans 2 are the same thing clientside...hmm
@@ -307,11 +307,11 @@ static int GetFixRoll(playerState_t *ps) {
 			}
 		}
 
-		if ((cgs.serverMod == SVMOD_JAPLUS && cgs.cinfo & JAPLUS_CINFO_FIXROLL3) || (cgs.serverMod == SVMOD_JAPRO && cgs.jcinfo & JAPRO_CINFO_FIXROLL3))
+		if ((cgs.serverMod == SVMOD_JAPLUS && cgs.cinfo & JAPLUS_CINFO_FIXROLL3) || (cgs.serverMod == SVMOD_JAPRO && cgs.jcinfo & JAPRO_CINFO_FIXROLL3) || (cgs.taystJKinfo & TAYSTJK_INFO_FIXROLL_3))
 			return 3;
-		if ((cgs.serverMod == SVMOD_JAPLUS && cgs.cinfo & JAPLUS_CINFO_FIXROLL2) || (cgs.serverMod == SVMOD_JAPRO && cgs.jcinfo & JAPRO_CINFO_FIXROLL2) || cgs.legacyProtocol)
+		if ((cgs.serverMod == SVMOD_JAPLUS && cgs.cinfo & JAPLUS_CINFO_FIXROLL2) || (cgs.serverMod == SVMOD_JAPRO && cgs.jcinfo & JAPRO_CINFO_FIXROLL2) || (cgs.taystJKinfo & TAYSTJK_INFO_FIXROLL_2) || cgs.legacyProtocol)
 			return 2;
-		if ((cgs.serverMod == SVMOD_JAPLUS && cgs.cinfo & JAPLUS_CINFO_FIXROLL1) || (cgs.serverMod == SVMOD_JAPRO && cgs.jcinfo & JAPRO_CINFO_FIXROLL1))
+		if ((cgs.serverMod == SVMOD_JAPLUS && cgs.cinfo & JAPLUS_CINFO_FIXROLL1) || (cgs.serverMod == SVMOD_JAPRO && cgs.jcinfo & JAPRO_CINFO_FIXROLL1) || (cgs.taystJKinfo & TAYSTJK_INFO_FIXROLL_1))
 			return 1;
 
 		return 0;
@@ -15475,7 +15475,7 @@ void PmoveSingle (pmove_t *pmove) {
 #else
 			else if ((pm->ps->pm_flags & PMF_GRAPPLE) && !(pm->ps->pm_flags & PMF_DUCKED) && cgs.serverMod != SVMOD_JAPLUS && (!(cgs.jcinfo & JAPRO_CINFO_JAPLUSGRAPPLE) || IsRacemode(pm->ps)))
 				PM_GrappleMoveTarzan();
-			else if ((pm->ps->pm_flags & PMF_GRAPPLE) && !(pm->ps->pm_flags & PMF_DUCKED) && (cgs.serverMod == SVMOD_JAPLUS || (cgs.jcinfo & JAPRO_CINFO_JAPLUSGRAPPLE)))
+			else if ((pm->ps->pm_flags & PMF_GRAPPLE) && !(pm->ps->pm_flags & PMF_DUCKED) && (cgs.serverMod == SVMOD_JAPLUS || (cgs.jcinfo & JAPRO_CINFO_JAPLUSGRAPPLE) || (cgs.taystJKinfo & TAYSTJK_INFO_GRAPPLE)))
 				PM_GrappleMove();
 #endif
 
