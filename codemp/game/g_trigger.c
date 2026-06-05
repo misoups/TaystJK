@@ -1911,6 +1911,13 @@ void TimerStop(gentity_t *trigger, gentity_t *player, trace_t *trace) {//JAPRO T
 
 		player->client->midRunTeleCount = 0;
 		player->client->midRunTeleMarkCount = 0;
+
+		// Block start trigger after finish — player must /kill or /amtele to reset
+		if (player->client->sess.raceMode && !player->client->pers.practice) {
+			player->client->noclipUsed = qtrue;
+			if (coopFinished && duelAgainst && duelAgainst->client)
+				duelAgainst->client->noclipUsed = qtrue;
+		}
 	}
 	//Set coopstarted to false?
 }
