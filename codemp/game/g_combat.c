@@ -2193,11 +2193,11 @@ void RaceMode_TeleportOnDeath( gentity_t *self ) {
 		vec3_t angles = {0, 0, 0};
 		angles[YAW]   = self->client->pers.telemarkAngle;
 		angles[PITCH] = self->client->pers.telemarkPitchAngle;
-		AmTeleportPlayer( self, self->client->pers.telemarkOrigin, angles, qtrue, qtrue, qtrue );
+		AmTeleportPlayer( self, self->client->pers.telemarkOrigin, angles, qfalse, qtrue, qtrue );
 	} else {
 		vec3_t spawn_origin, spawn_angles;
 		SelectSpawnPoint( self->client->ps.origin, spawn_origin, spawn_angles, TEAM_FREE, qfalse );
-		AmTeleportPlayer( self, spawn_origin, spawn_angles, qtrue, qtrue, qfalse );
+		AmTeleportPlayer( self, spawn_origin, spawn_angles, qfalse, qtrue, qfalse );
 	}
 	self->health = self->client->ps.stats[STAT_HEALTH] = self->client->ps.stats[STAT_MAX_HEALTH] = 100;
 	self->client->jetpackActivated = qfalse;

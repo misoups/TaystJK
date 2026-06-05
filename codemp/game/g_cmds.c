@@ -7607,7 +7607,7 @@ void Cmd_RaceTele_f(gentity_t *ent, qboolean useForce)
 			vec3_t	angles = {0, 0, 0};
 			angles[YAW] = ent->client->pers.telemarkAngle;
 			angles[PITCH] = ent->client->pers.telemarkPitchAngle;
-			AmTeleportPlayer( ent, ent->client->pers.telemarkOrigin, angles, qtrue, qtrue, qtrue);
+			AmTeleportPlayer( ent, ent->client->pers.telemarkOrigin, angles, qfalse, qtrue, qtrue);
 		}
 		else
 			trap->SendServerCommand( ent-g_entities, "print \"No telemark set!\n\"" );
