@@ -1248,20 +1248,19 @@ void SV_Frame( int msec ) {
 	sv.timeResidual += msec;
 
 	// Lag spike detection: log when the server exceeded its frame deadline by the threshold.
-	// Compare against (frameMsec + threshold) so hibernation frames (500ms expected) don't
-	// trigger false positives, and the threshold always means "extra ms beyond expected".
-	if ( sv_lagSpikeThreshold->integer > 0 && !svs.hibernation.enabled &&
+	// Only log when human players are connected — spikes with 0 players are meaningless
+	// (and also covers hibernation, where the slow frame rate would otherwise false-positive).
+	int numPlayers = 0;
+	for ( int i = 0; i < sv_maxclients->integer; i++ ) {
+		if ( svs.clients[i].state >= CS_ACTIVE &&
+			 svs.clients[i].netchan.remoteAddress.type != NA_BOT ) {
+			numPlayers++;
+		}
+	}
+
+	if ( sv_lagSpikeThreshold->integer > 0 && !svs.hibernation.enabled && numPlayers > 0 &&
 		 msec >= frameMsec + sv_lagSpikeThreshold->integer ) {
 		int missedFrames = msec / frameMsec;
-
-		// Count connected human players for context
-		int numPlayers = 0;
-		for ( int i = 0; i < sv_maxclients->integer; i++ ) {
-			if ( svs.clients[i].state >= CS_ACTIVE &&
-				 svs.clients[i].netchan.remoteAddress.type != NA_BOT ) {
-				numPlayers++;
-			}
-		}
 
 		const char *mapname = Cvar_VariableString( "mapname" );
 
