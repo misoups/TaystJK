@@ -1162,30 +1162,6 @@ static CFontInfo *GetFont_Actual(int index)
 	return(NULL);
 }
 
-static CFontInfo *RE_Font_GetVariant(CFontInfo *font, float *scale) {
-	int variants = font->GetNumVariants();
-
-	if (variants > 0) {
-		CFontInfo *variant;
-		int requestedSize = font->GetPointSize() * *scale *
-			r_fontSharpness->value * (glConfig.vidHeight / SCREEN_HEIGHT);
-
-		if (requestedSize <= font->GetPointSize())
-			return font;
-
-		for (int i = 0; i < variants; i++) {
-			variant = font->GetVariant(i);
-
-			if (requestedSize <= variant->GetPointSize())
-				break;
-		}
-
-		*scale *= (float)font->GetPointSize() / variant->GetPointSize();
-		return variant;
-	}
-
-	return font;
-}
 
 // needed to add *piShader param because of multiple TPs,
 //	if not passed in, then I also skip S,T calculations for re-usable static asian glyphinfo struct...
@@ -1424,7 +1400,6 @@ float RE_Font_StrLenPixelsNew( const char *psText, const int iFontHandle, const 
 	if ( !curfont ) {
 		return 0.0f;
 	}
-	curfont = RE_Font_GetVariant(curfont, &fScale);
 
 	float fScaleAsian = fScale;
 	if (Language_IsAsian() && fScale > 0.7f )
@@ -1528,8 +1503,7 @@ int RE_Font_HeightPixels(const int iFontHandle, const float fScaleIn)
 	if(curfont)
 	{
 		float fValue;
-		curfont = RE_Font_GetVariant(curfont, &fScale);
-		fValue = curfont->GetPointSize() * fScale;
+			fValue = curfont->GetPointSize() * fScale;
 		return curfont->mbRoundCalcs ? Round(fValue) : fValue;
 	}
 	return(0);
@@ -1608,7 +1582,6 @@ void RE_Font_DrawString(int ox, int oy, const char *psText, const float *rgba, c
 	{
 		return;
 	}
-	curfont = RE_Font_GetVariant(curfont, &fScale);
 	iFontHandle = curfont->GetHandle() | (iFontHandle & ~SET_MASK);
 
 	float fScaleAsian = fScale;
@@ -1806,31 +1779,9 @@ static int RE_RegisterFont_Real(const char *psName)
 
 int RE_RegisterFont(const char *psName) {
 	int oriFontHandle = RE_RegisterFont_Real(psName);
-	if (oriFontHandle) {
-		CFontInfo *oriFont = GetFont_Actual(oriFontHandle);
-
-		if (oriFont->GetNumVariants() == 0) {
-			for (int i = 0; i < MAX_FONT_VARIANTS; i++) {
-				const char *variantName = va( "%s_sharp%i", psName, i + 1 );
-				const char *fontDatPath = FontDatPath( variantName );
-				if ( ri.FS_ReadFile(fontDatPath, NULL) > 0 ) {
-					int replacerFontHandle = RE_RegisterFont_Real(variantName);
-					if (replacerFontHandle) {
-						CFontInfo *replacerFont = GetFont_Actual(replacerFontHandle);
-						replacerFont->m_isVariant = qtrue;
-						oriFont->AddVariant(replacerFont);
-					} else {
-						break;
-					}
-				} else {
-					break;
-				}
-			}
-		}
-	} else {
+	if (!oriFontHandle) {
 		ri.Printf( PRINT_WARNING, "RE_RegisterFont: Couldn't find font %s\n", psName );
 	}
-
 	return oriFontHandle;
 }
 
@@ -1839,7 +1790,7 @@ void R_InitFonts(void)
 	g_iCurrentFontIndex = 1;			// entry 0 is reserved for "missing/invalid"
 	g_iNonScaledCharRange = INT_MAX;	// default all chars to have no special scaling (other than user supplied)
 
-	r_fontSharpness = ri.Cvar_Get( "r_fontSharpness", "1", CVAR_ARCHIVE_ND, "" );
+	r_fontSharpness = ri.Cvar_Get( "r_fontSharpness", "0", CVAR_ARCHIVE|CVAR_LATCH, "Font texture filtering: 0=GL_LINEAR (smooth), 1=GL_NEAREST (sharp/crisp). Requires vid_restart." );
 
 	cl_coloredTextShadows = ri.Cvar_Get("cl_coloredTextShadows", "0", CVAR_ARCHIVE, "Toggle JK2 1.02-style colored text shadows");
 }

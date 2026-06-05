@@ -657,6 +657,8 @@ void RestoreGhoul2InfoArray()
 		TheGhoul2InfoArray();
 
 		size_t size;
+		if ( !ri.PD_Load )
+			return;
 		const void *data = ri.PD_Load (PERSISTENT_G2DATA, &size);
 		if ( data == NULL )
 		{
