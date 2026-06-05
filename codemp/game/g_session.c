@@ -46,7 +46,8 @@ Called on game shutdown
 void G_WriteClientSessionData( gclient_t *client )
 {
 	char		s[MAX_CVAR_VALUE_STRING] = {0},
-				siegeClass[64] = {0}, IP[NET_ADDRSTRMAXLEN] = {0};
+				siegeClass[64] = {0}, IP[NET_ADDRSTRMAXLEN] = {0},
+				userName[16] = {0};
 	const char	*var;
 	int			i = 0;
 
@@ -93,7 +94,18 @@ void G_WriteClientSessionData( gclient_t *client )
 	Q_strcat( s, sizeof( s ), va( "%i ", client->sess.accountFlags) );
 
 	Q_strcat( s, sizeof( s ), va( "%i ", client->sess.sayteammod ) );
-	Q_strcat( s, sizeof( s ), va( "%s", client->sess.clanpass ) ); //wtf?
+	Q_strcat( s, sizeof( s ), va( "%s ", client->sess.clanpass ) );
+
+	// Persist login state across map changes
+	Q_strncpyz( userName, client->pers.userName, sizeof( userName ) );
+	for ( i=0; userName[i]; i++ ) {
+		if (userName[i] == ' ')
+			userName[i] = 1;
+	}
+	if ( !userName[0] )
+		Q_strncpyz( userName, "none", sizeof( userName ) );
+	Q_strcat( s, sizeof( s ), va( "%s ", userName ) );
+	Q_strcat( s, sizeof( s ), va( "%u", client->pers.unlocks ) );
 
 	var = va( "session%i", client - level.clients );
 
@@ -113,14 +125,16 @@ void G_ReadSessionData( gclient_t *client )
 {
 	char			s[MAX_CVAR_VALUE_STRING] = {0};
 	const char		*var;
-	int			i=0, tempSessionTeam=0, tempSpectatorState, tempTeamLeader, tempSawMOTD, tempRaceMode;
+	int				i=0, tempSessionTeam=0, tempSpectatorState, tempTeamLeader, tempSawMOTD, tempRaceMode;
+	char			savedUserName[16] = {0};
+	unsigned int	savedUnlocks = 0;
 
 	var = va( "session%i", client - level.clients );
 	trap->Cvar_VariableStringBuffer( var, s, sizeof(s) );
 
 	//trap->Print("READING: %s, Session: %s\n", var, s);
 
-	sscanf( s, "%i %i %i %i %i %i %i %i %i %i %i %i %s %s %u %i %i %i %i %i %s",//[JAPRO - Serverside - All - Ignore]
+	sscanf( s, "%i %i %i %i %i %i %i %i %i %i %i %i %s %s %u %i %i %i %i %i %s %s %u",//[JAPRO - Serverside - All - Ignore]
 		&tempSessionTeam, //&client->sess.sessionTeam,
 		&client->sess.spectatorNum,
 		&tempSpectatorState, //&client->sess.spectatorState,
@@ -137,11 +151,13 @@ void G_ReadSessionData( gclient_t *client )
 		client->sess.IP,
 		&client->sess.ignore, //[JAPRO - Serverside - All - Ignore]
 		&tempSawMOTD,
-		&tempRaceMode, 
+		&tempRaceMode,
 		&client->sess.movementStyle,
 		&client->sess.accountFlags,
 		&client->sess.sayteammod,
-		client->sess.clanpass
+		client->sess.clanpass,
+		savedUserName,
+		&savedUnlocks
 		);
 
 	client->sess.sessionTeam	= (team_t)tempSessionTeam;
@@ -169,6 +185,16 @@ void G_ReadSessionData( gclient_t *client )
 	client->ps.fd.saberAnimLevel = client->sess.saberLevel;
 	client->ps.fd.saberDrawAnimLevel = client->sess.saberLevel;
 	client->ps.fd.forcePowerSelected = client->sess.selectedFP;
+
+	// Restore login state if one was saved
+	for ( i=0; savedUserName[i]; i++ ) {
+		if (savedUserName[i] == 1)
+			savedUserName[i] = ' ';
+	}
+	if ( savedUserName[0] && Q_stricmp( savedUserName, "none" ) ) {
+		Q_strncpyz( client->pers.userName, savedUserName, sizeof( client->pers.userName ) );
+		client->pers.unlocks = savedUnlocks;
+	}
 }
 
 
