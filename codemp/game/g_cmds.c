@@ -7808,6 +7808,8 @@ void Cmd_Amtele_f(gentity_t *ent)
 			origin[1] = g_entities[clientid1].client->ps.origin[1];
 			origin[2] = g_entities[clientid1].client->ps.origin[2] + 96;
 			AmTeleportPlayer( ent, origin, angles, droptofloor, race, qfalse );
+			if (race)
+				ent->client->noclipUsed = qtrue;
 			return;
 		}
 
@@ -7860,6 +7862,8 @@ void Cmd_Amtele_f(gentity_t *ent)
 			}*/
 
 			AmTeleportPlayer( ent, origin, angles, droptofloor, race, qfalse );
+			if (race)
+				ent->client->noclipUsed = qtrue;
 			return;
 		}
 
@@ -7882,6 +7886,8 @@ void Cmd_Amtele_f(gentity_t *ent)
 				angles[YAW] = atoi(yaw);
 
 				AmTeleportPlayer( ent, origin, angles, droptofloor, race, qfalse );
+				if (race)
+					ent->client->noclipUsed = qtrue;
 			}
 
 			else//Amtele other player to origin
