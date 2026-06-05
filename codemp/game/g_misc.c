@@ -310,6 +310,12 @@ void AmTeleportPlayer( gentity_t *player, vec3_t origin, vec3_t angles, qboolean
 	if (player->client->noclip)
 		wasNoClip = qtrue;
 
+	// If this is a proper race reset (not called from within noclip turn-off), clear the noclip invalidation flag.
+	// wasNoClip == false means the player was NOT in noclip when amtele was triggered (i.e., it's a real /amtele, not the
+	// internal tele that fires when turning noclip off).
+	if (!wasNoClip && race)
+		player->client->noclipUsed = qfalse;
+
 	player->client->noclip = qtrue;
 	if (!toMark || !(player->client->ps.stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_ALLOWTELES))
 		ResetPlayerTimers(player, qtrue);

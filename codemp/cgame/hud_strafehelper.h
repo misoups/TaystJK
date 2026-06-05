@@ -97,6 +97,7 @@ qboolean DF_HasAutoJump();
 #define SPEEDOMETER_JUMPSCOLORS2    (1<<13)
 #define SPEEDOMETER_SPEEDGRAPHOLD   (1<<14)
 #define SPEEDOMETER_XYZ   			(1<<15)
+#define SPEEDOMETER_NOUNIT			(1<<16) // hide µ:/k:/m: unit prefix entirely
 
 //Miscellaneous
 #define SPEEDOMETER_NUM_SAMPLES 500

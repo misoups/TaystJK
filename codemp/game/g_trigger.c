@@ -1232,6 +1232,22 @@ MULTIPLE - multiple entities can touch this trigger in a single frame *and* if n
 wait - how long to wait between pushes: -1 = push only once
 speed - when used with the LINEAR spawnflag, pushes the client toward the position at a constant speed (default is 1000)
 */
+// mvsdk/defrag trigger_push_velocity: arc jumppad using target_position as apex.
+// Preserves the player's XY velocity — only the Z component is applied.
+// This matches mvsdk behaviour where s.saberInFlight == 1 signals BG_TouchJumpPad
+// to keep horizontal momentum and only set the vertical component.
+void SP_trigger_push_velocity( gentity_t *self ) {
+	InitTrigger( self );
+	self->r.svFlags &= ~SVF_NOCLIENT;    // send to client for prediction
+	G_SoundIndex( "sound/weapons/force/jump.wav" );
+	self->s.eType        = ET_PUSH_TRIGGER;
+	self->s.saberInFlight = 1;           // flag: BG_TouchJumpPad → preserve XY
+	self->touch          = trigger_push_touch; // calls BG_TouchJumpPad
+	self->think          = AimAtTarget;  // computes arc velocity into origin2
+	self->nextthink      = level.time + FRAMETIME;
+	trap->LinkEntity( (sharedEntity_t *)self );
+}
+
 void SP_trigger_push( gentity_t *self ) {
 	InitTrigger (self);
 
@@ -1320,6 +1336,12 @@ qboolean ValidRaceSettings(int restrictions, gentity_t *player)
 				return qfalse;
 			}
 		}
+		else {//no jump restriction specified — default to jump1
+			if (player->client->ps.fd.forcePowerLevel[FP_LEVITATION] != 1 || player->client->ps.powerups[PW_YSALAMIRI] > 0) {
+				trap->SendServerCommand( player-g_entities, "cp \"^3Warning: this course requires force jump level 1!\n\n\n\n\n\n\n\n\n\n\"");
+				return qfalse;
+			}
+		}
 	}
 	else if (style == MV_COOP_JKA) {
 		if (player->client->ps.fd.forcePowerLevel[FP_LEVITATION] == 2 && !(restrictions & (1 << 1))) {//using jump2 but its not allowed
@@ -1332,8 +1354,8 @@ qboolean ValidRaceSettings(int restrictions, gentity_t *player)
 		}
 	}
 
-	if (player->client->pers.haste && !(restrictions & (1 << 3)))
-		return qfalse; //IF client has haste, and the course does not allow haste, dont count it.
+	if (player->client->pers.haste && !g_mapHaste.integer && !(restrictions & (1 << 3)))
+		return qfalse; //IF client has haste (manually), and the course does not allow haste, dont count it. g_mapHaste is a server-level setting so always valid.
 	if (((style != MV_JETPACK) && (style != MV_TRIBES)) && (player->client->ps.stats[STAT_HOLDABLE_ITEMS] & (1 << HI_JETPACK)) && !(restrictions & (1 << 4))) //kinda deprecated.. maybe just never allow jetpack?
 		return qfalse; //IF client has jetpack, and the course does not allow jetpack, dont count it.
 	if (style == MV_SWOOP && !player->client->ps.m_iVehicleNum)
@@ -1463,14 +1485,20 @@ void TimerStart(gentity_t *trigger, gentity_t *player, trace_t *trace) {//JAPRO 
 		return;
 	if (player->client->pers.stats.lastResetTime == level.time) //Dont allow a starttimer to start in the same frame as a resettimer (called from noclip or amtele)
 		return;
+	if (player->client->sess.raceMode && !player->client->pers.practice && player->client->noclipUsed) {
+		trap->SendServerCommand(player - g_entities, "cp \"^1Error: your race state is invalidated.\n^7Please /kill or /amtele to reset.\n\"");
+		return;
+	}
 	if (player->client->sess.raceMode && g_fixTimerOOB.integer && !trap->InPVS(player->client->ps.origin, player->client->ps.origin)) { //Check if they are OOB (not in a PVS?)
 		return;
 	}
 
-	//if (GetTimeMS() - player->client->pers.stats.startTime < 500)//Some built in floodprotect per player?
-		//return;
-	//if (player->client->pers.stats.startTime) //Instead of floodprotect, dont let player start a timer if they already have one.  Mapmakers should then put reset timers over the start area.
-		//return;
+	// Q3 Defrag behaviour: once the start trigger fires, it cannot fire again until the
+	// run is finished or the player resets (/kill).  This prevents building pre-speed by
+	// repeatedly brushing the trigger.  Controlled by g_noStartReactivate (default 1).
+	if (g_noStartReactivate.integer && player->client->pers.stats.startTime) {
+		return;
+	}
 
 	//trap->Print("Actual trigger touch! time: %i\n", GetTimeMS());
 
@@ -1672,6 +1700,7 @@ void PrintRaceTime(char *username, char *playername, char *message, char *style,
 void IntegerToRaceName(int style, char *styleString, size_t styleStringSize);
 void TimeToString(int duration_ms, char *timeStr, size_t strSize);
 void G_AddRaceTime(char *account, char *courseName, int duration_ms, int style, int topspeed, int average, int clientNum, int awesomenoise, int worldrecordnoise); //should this be extern?
+void G_LogRun(const char *username, const char *playername, const char *coursename, int style, int duration_ms);
 void TimerStop(gentity_t *trigger, gentity_t *player, trace_t *trace) {//JAPRO Timers
 	if (!player->client)
 		return;
@@ -1834,6 +1863,26 @@ void TimerStop(gentity_t *trigger, gentity_t *player, trace_t *trace) {//JAPRO T
 					Q_StripColor(playerName);
 					PrintRaceTime(NULL, playerName, trigger->message, styleStr, 0, 0, timeStr, duelAgainst->client->ps.clientNum, qfalse, qfalse, qfalse, qfalse, qtrue, 0, 0, 0, 0, 0);
 				}
+				// Log unlogged run(s) to history (time() is shadowed by local float, so coursename is computed here)
+				{
+					char _info[MAX_INFO_STRING] = {0}, _course[40] = {0}, _p1name[MAX_NETNAME] = {0};
+					trap->GetServerinfo(_info, sizeof(_info));
+					Q_strncpyz(_course, Info_ValueForKey(_info, "mapname"), sizeof(_course));
+					if (trigger->message) {
+						char _msg[40];
+						Q_strncpyz(_msg, trigger->message, sizeof(_msg));
+						Q_strlwr(_msg);
+						Q_CleanStr(_msg);
+						Q_strcat(_course, sizeof(_course), va(" (%s)", _msg));
+					}
+					Q_strlwr(_course);
+					Q_CleanStr(_course);
+					Q_strncpyz(_p1name, player->client->pers.netname, sizeof(_p1name));
+					Q_StripColor(_p1name);
+					G_LogRun("", _p1name, _course, player->client->ps.stats[STAT_MOVEMENTSTYLE], (int)(time * 1000));
+					if (coopFinished)
+						G_LogRun("", playerName, _course, duelAgainst->client->ps.stats[STAT_MOVEMENTSTYLE], (int)(time * 1000));
+				}
 			}
 		}
 
@@ -1864,6 +1913,16 @@ void TimerStop(gentity_t *trigger, gentity_t *player, trace_t *trace) {//JAPRO T
 		player->client->midRunTeleMarkCount = 0;
 	}
 	//Set coopstarted to false?
+}
+
+static void FormatCPTime(int ms, char *buf, int bufsize) {
+	int minutes = ms / 60000;
+	int seconds = (ms % 60000) / 1000;
+	int millis = ms % 1000;
+	if (minutes > 0)
+		Com_sprintf(buf, bufsize, "%i:%02i.%03i", minutes, seconds, millis);
+	else
+		Com_sprintf(buf, bufsize, "%i.%03i", seconds, millis);
 }
 
 void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//JAPRO Timers
@@ -1937,47 +1996,104 @@ void TimerCheckpoint(gentity_t *trigger, gentity_t *player, trace_t *trace) {//J
 			trap->SendServerCommand( player-g_entities, va("chat \"^5Checkpoint: ^3%.3f^5, max ^3%i^5, average ^3%i^5 ups\"", (float)time * 0.001f, player->client->pers.stats.topSpeed, average));
 			*/
 
-		if (mandatoryCheckpoint) {  //Bitvalue of the checkpoint Todo, need to print times
-			if (player->client->pers.showCenterCP)
-				trap->SendServerCommand(player - g_entities, va("cp \"^5Required Checkpoint %i:\n^3%.3fs^5, avg ^3%i^5u, max ^3%i^5u\n\n\n\n\n\n\n\n\n\"", mandatoryCheckpoint, (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-			if (player->client->pers.showConsoleCP)
-				trap->SendServerCommand(player - g_entities, va("print \"^5Required Checkpoint %i: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups\n\"", mandatoryCheckpoint, (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-			else if (player->client->pers.showChatCP)
-				trap->SendServerCommand(player - g_entities, va("chat \"^5Required Checkpoint %i: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups\"", mandatoryCheckpoint, (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-		}
-		else {
-			if (player->client->pers.showCenterCP)
-				trap->SendServerCommand(player - g_entities, va("cp \"^3%.3fs^5, avg ^3%i^5u, max ^3%i^5u\n\n\n\n\n\n\n\n\n\n\"", (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-			if (player->client->pers.showConsoleCP)
-				trap->SendServerCommand(player - g_entities, va("print \"^5Checkpoint: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups\n\"", (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-			else if (player->client->pers.showChatCP)
-				trap->SendServerCommand(player - g_entities, va("chat \"^5Checkpoint: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups\"", (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-		}
+		{
+			char cpCenterMsg[256] = {0}, cpConsoleMsg[128] = {0}, cpChatMsg[128] = {0};
+			int topSpd = (int)(player->client->pers.stats.topSpeed + 0.5f);
 
-		if (player->client->sess.movementStyle == MV_COOP_JKA && player->client->ps.duelInProgress && player->client->pers.stats.coopStarted)
-		{ //send checkpoint to coop partner
-			gentity_t *partner = &g_entities[player->client->ps.duelIndex];
-			if (partner && partner->inuse && partner->client && (level.time - partner->client->pers.stats.lastCheckpointTime > 1000))
-			{
-				if (partner->client->pers.showCenterCP)
-					trap->SendServerCommand( partner - g_entities, va("cp \"^3%.3fs^5, avg ^3%i^5u, max ^3%i^5u\n\n\n\n\n\n\n\n\n\n\"", (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-				if (partner->client->pers.showConsoleCP)
-					trap->SendServerCommand(partner - g_entities, va("print \"^5Checkpoint: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups\n\"", (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-				else if (partner->client->pers.showChatCP)
-					trap->SendServerCommand( partner - g_entities, va("chat \"^5Checkpoint: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups\"", (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
+			if (mandatoryCheckpoint) {
+				int cpIdx = mandatoryCheckpoint - 1;
+				int pbMs;
+				char timeStr[32] = {0}, deltaStr[32] = {0};
+				int style = player->client->ps.stats[STAT_MOVEMENTSTYLE];
+				char info[512] = {0}, mapName[40] = {0};
+
+				trap->GetServerinfo(info, sizeof(info));
+				Q_strncpyz(mapName, Info_ValueForKey(info, "mapname"), sizeof(mapName));
+				Q_strlwr(mapName);
+
+				// Reload in-memory PBs from DB when course or style changes, or on first use
+				if (player->client->pers.stats.bestCPCourseID != player->client->pers.stats.courseID + 1 ||
+				    player->client->pers.stats.bestCPStyle != style) {
+					memset(player->client->pers.stats.bestCPTimes, 0, sizeof(player->client->pers.stats.bestCPTimes));
+					if (player->client->pers.userName[0])
+						G_LoadCheckpointPBs(player->client->pers.userName, mapName, player->client->pers.stats.courseID, style, player->client->pers.stats.bestCPTimes);
+					player->client->pers.stats.bestCPCourseID = player->client->pers.stats.courseID + 1;
+					player->client->pers.stats.bestCPStyle = style;
+				}
+
+				pbMs = player->client->pers.stats.bestCPTimes[cpIdx];
+				FormatCPTime(time, timeStr, sizeof(timeStr));
+
+				if (pbMs == 0) {
+					// First crossing — neutral
+					Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n\n\n\n\n\n\n\n\n\n", timeStr);
+					Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s^5, avg ^3%i^5, max ^3%i^5 ups\n", mandatoryCheckpoint, timeStr, average, topSpd);
+					Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s^5, avg ^3%i^5, max ^3%i^5 ups", mandatoryCheckpoint, timeStr, average, topSpd);
+				} else {
+					int deltaMs = time - pbMs;
+					int absDelta = deltaMs < 0 ? -deltaMs : deltaMs;
+					FormatCPTime(absDelta, deltaStr, sizeof(deltaStr));
+					if (deltaMs < 0) {
+						// Faster — green
+						Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n^2-%s\n\n\n\n\n\n\n\n", timeStr, deltaStr);
+						Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s ^2(-%s PB!)\n", mandatoryCheckpoint, timeStr, deltaStr);
+						Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s ^2(-%s PB!)", mandatoryCheckpoint, timeStr, deltaStr);
+					} else {
+						// Slower — red
+						Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^7%s\n^1+%s\n\n\n\n\n\n\n\n", timeStr, deltaStr);
+						Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint %i: ^3%s ^1(+%s)\n", mandatoryCheckpoint, timeStr, deltaStr);
+						Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint %i: ^3%s ^1(+%s)", mandatoryCheckpoint, timeStr, deltaStr);
+					}
+				}
+
+				// Update in-memory PB and persist to DB if improved
+				if (time < pbMs || pbMs == 0) {
+					player->client->pers.stats.bestCPTimes[cpIdx] = time;
+					if (player->client->pers.userName[0])
+						G_SaveCheckpointPB(player->client->pers.userName, mapName, player->client->pers.stats.courseID, cpIdx, style, time);
+				}
 			}
-		}
+			else {
+				// Non-mandatory checkpoint — standard display, no PB tracking
+				Com_sprintf(cpCenterMsg, sizeof(cpCenterMsg), "^3%.3fs^5, avg ^3%i^5u, max ^3%i^5u\n\n\n\n\n\n\n\n\n\n", (float)time * 0.001f, average, topSpd);
+				Com_sprintf(cpConsoleMsg, sizeof(cpConsoleMsg), "^5Checkpoint: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups\n", (float)time * 0.001f, average, topSpd);
+				Com_sprintf(cpChatMsg, sizeof(cpChatMsg), "^5Checkpoint: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups", (float)time * 0.001f, average, topSpd);
+			}
 
-		for (i=0; i<MAX_CLIENTS; i++) {//Also print to anyone spectating them..
-			if (!g_entities[i].inuse)
-				continue;
-			if ((level.clients[i].sess.sessionTeam == TEAM_SPECTATOR) && (level.clients[i].ps.pm_flags & PMF_FOLLOW) && (level.clients[i].sess.spectatorClient == player->client->ps.clientNum))
+			// Send to player
+			if (player->client->pers.showCenterCP)
+				trap->SendServerCommand(player - g_entities, va("cp \"%s\"", cpCenterMsg));
+			if (player->client->pers.showConsoleCP)
+				trap->SendServerCommand(player - g_entities, va("print \"%s\"", cpConsoleMsg));
+			else if (player->client->pers.showChatCP)
+				trap->SendServerCommand(player - g_entities, va("chat \"%s\"", cpChatMsg));
+
+			// Send to coop partner
+			if (player->client->sess.movementStyle == MV_COOP_JKA && player->client->ps.duelInProgress && player->client->pers.stats.coopStarted)
 			{
-				//if (trigger && trigger->spawnflags & 1)//Minimalist print loda fixme get rid of target shit 
-				if (level.clients[i].pers.showCenterCP)
-					trap->SendServerCommand( i, va("cp \"^3%.3fs^5, avg ^3%i^5u, max ^3%i^5u\n\n\n\n\n\n\n\n\n\n\"", (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
-				if (level.clients[i].pers.showChatCP)
-					trap->SendServerCommand( i, va("chat \"^5Checkpoint: ^3%.3f^5, avg ^3%i^5, max ^3%i^5 ups\"", (float)time * 0.001f, average, (int)(player->client->pers.stats.topSpeed + 0.5f)));
+				gentity_t *partner = &g_entities[player->client->ps.duelIndex];
+				if (partner && partner->inuse && partner->client && (level.time - partner->client->pers.stats.lastCheckpointTime > 1000))
+				{
+					if (partner->client->pers.showCenterCP)
+						trap->SendServerCommand(partner - g_entities, va("cp \"%s\"", cpCenterMsg));
+					if (partner->client->pers.showConsoleCP)
+						trap->SendServerCommand(partner - g_entities, va("print \"%s\"", cpConsoleMsg));
+					else if (partner->client->pers.showChatCP)
+						trap->SendServerCommand(partner - g_entities, va("chat \"%s\"", cpChatMsg));
+				}
+			}
+
+			// Send to spectators watching this player
+			for (i = 0; i < MAX_CLIENTS; i++) {
+				if (!g_entities[i].inuse)
+					continue;
+				if ((level.clients[i].sess.sessionTeam == TEAM_SPECTATOR) && (level.clients[i].ps.pm_flags & PMF_FOLLOW) && (level.clients[i].sess.spectatorClient == player->client->ps.clientNum))
+				{
+					if (level.clients[i].pers.showCenterCP)
+						trap->SendServerCommand(i, va("cp \"%s\"", cpCenterMsg));
+					if (level.clients[i].pers.showChatCP)
+						trap->SendServerCommand(i, va("chat \"%s\"", cpChatMsg));
+				}
 			}
 		}
 
@@ -2567,12 +2683,227 @@ void SP_trigger_timer_stop( gentity_t *self )
 	trap->LinkEntity ((sharedEntity_t *)self);
 }
 
+// No-op spawn for Q3 defrag marker entities (target_startTimer, target_stopTimer,
+// target_checkpoint, Twi_timer). They are converted to df_trigger_* after all entities spawn.
+void SP_target_df_husk(gentity_t *self) {
+	(void)self;
+}
+
+// Called once after all map entities have spawned.
+// Recognizes Q3 defrag and Twi mod timer trigger formats as an additional method
+// alongside the native df_trigger_* classnames already supported.
+//
+// Q3 defrag maps use point entities (target_startTimer, target_stopTimer,
+// target_checkpoint) as targets. The actual brush trigger is a trigger_multiple
+// that targets them. We find those brushes and re-initialize them as the
+// equivalent df_trigger_* type so the existing TimerStart/Stop/Checkpoint
+// touch handlers pick them up normally.
+//
+// Twi mod uses a brush entity with classname "Twi_timer"; spawnflag 1 = finish.
+void G_ConvertQ3DefragTimers(void) {
+	gentity_t *target, *trigger;
+	int checkpointBit = 1;
+
+	// Q3 defrag: trigger_multiple targeting target_startTimer -> df_trigger_start
+	target = NULL;
+	while ((target = G_Find(target, FOFS(classname), "target_startTimer")) != NULL) {
+		if (!target->targetname || !target->targetname[0]) {
+			G_LogPrintf("DEFRAG: untargeted target_startTimer at %s, ignoring\n", vtos(target->s.origin));
+			G_FreeEntity(target);
+			continue;
+		}
+		trigger = NULL;
+		while ((trigger = G_Find(trigger, FOFS(target), target->targetname)) != NULL) {
+			if (!trigger->model)
+				continue;
+			trigger->classname = "df_trigger_start";
+			InitTrigger(trigger);
+			trigger->touch = TimerStart;
+			trigger->wait  = 0;  // Q3 used wait -1 for "fire every frame"; JKA treats wait<0 as one-shot. Force 0 = immediate re-trigger.
+			trigger->target = NULL;
+			trigger->use = NULL;
+			trap->LinkEntity((sharedEntity_t *)trigger);
+		}
+		G_FreeEntity(target);
+	}
+
+	// Q3 defrag: trigger_multiple targeting target_stopTimer -> df_trigger_finish
+	target = NULL;
+	while ((target = G_Find(target, FOFS(classname), "target_stopTimer")) != NULL) {
+		if (!target->targetname || !target->targetname[0]) {
+			G_LogPrintf("DEFRAG: untargeted target_stopTimer at %s, ignoring\n", vtos(target->s.origin));
+			G_FreeEntity(target);
+			continue;
+		}
+		trigger = NULL;
+		while ((trigger = G_Find(trigger, FOFS(target), target->targetname)) != NULL) {
+			if (!trigger->model)
+				continue;
+			trigger->classname = "df_trigger_finish";
+			InitTrigger(trigger);
+			trigger->touch = TimerStop;
+			trigger->wait  = 0;
+			trigger->target = NULL;
+			trigger->use = NULL;
+			if (level.numCourses == 0) {
+				Q_strncpyz(level.courseName[0], "", sizeof(level.courseName[0]));
+				level.numCourses = 1;
+			}
+			trap->LinkEntity((sharedEntity_t *)trigger);
+		}
+		G_FreeEntity(target);
+	}
+
+	// Q3 defrag: trigger_multiple targeting target_checkpoint -> df_trigger_checkpoint
+	// Each unique target_checkpoint gets the next power-of-2 objective bit.
+	// The finish trigger's objective defaults to 0 (no checkpoints required),
+	// matching Q3 defrag behavior where checkpoints track splits but don't gate the finish.
+	target = NULL;
+	while ((target = G_Find(target, FOFS(classname), "target_checkpoint")) != NULL) {
+		if (!target->targetname || !target->targetname[0]) {
+			G_LogPrintf("DEFRAG: untargeted target_checkpoint at %s, ignoring\n", vtos(target->s.origin));
+			G_FreeEntity(target);
+			continue;
+		}
+		trigger = NULL;
+		while ((trigger = G_Find(trigger, FOFS(target), target->targetname)) != NULL) {
+			if (!trigger->model)
+				continue;
+			trigger->classname = "df_trigger_checkpoint";
+			InitTrigger(trigger);
+			trigger->objective = checkpointBit;
+			trigger->touch = TimerCheckpoint;
+			trigger->wait  = 0;
+			trigger->target = NULL;
+			trigger->use = NULL;
+			trap->LinkEntity((sharedEntity_t *)trigger);
+		}
+		checkpointBit <<= 1;
+		G_FreeEntity(target);
+	}
+
+	// Twi mod: Twi_timer brush entity, spawnflag 1 = finish timer, otherwise start
+	trigger = NULL;
+	while ((trigger = G_Find(trigger, FOFS(classname), "Twi_timer")) != NULL) {
+		if (!trigger->model)
+			continue;
+		if (trigger->spawnflags & 1) {
+			trigger->classname = "df_trigger_finish";
+			InitTrigger(trigger);
+			trigger->touch = TimerStop;
+			trigger->wait  = 0;
+			trigger->use = NULL;
+			if (level.numCourses == 0) {
+				Q_strncpyz(level.courseName[0], "", sizeof(level.courseName[0]));
+				level.numCourses = 1;
+			}
+			trap->LinkEntity((sharedEntity_t *)trigger);
+		} else {
+			trigger->classname = "df_trigger_start";
+			InitTrigger(trigger);
+			trigger->touch = TimerStart;
+			trigger->wait  = 0;
+			trigger->use = NULL;
+			trap->LinkEntity((sharedEntity_t *)trigger);
+		}
+	}
+}
+
+// Q3 defrag target_speed: XY speed normalizer.
+// Preserves the player's horizontal velocity direction and sets its magnitude
+// to self->speed, based on spawnflags:
+//   bit 1 (2):  also set Z velocity to self->speed
+//   bit 3 (8):  minimum boost only — skip if player's XY speed is already >= speed
+//   (default):  full override — always set XY speed exactly to self->speed
+//
+// This is activated via the normal trigger_multiple → G_UseTargets chain;
+// no entity-graph conversion pass is needed.
+void use_target_speed(gentity_t *self, gentity_t *other, gentity_t *activator) {
+	float      xy_len, scale;
+	playerState_t *ps;
+
+	if (!activator || !activator->client)
+		return;
+	if (activator->client->ps.pm_type != PM_NORMAL)
+		return;
+
+	ps     = &activator->client->ps;
+	xy_len = sqrtf(ps->velocity[0] * ps->velocity[0] + ps->velocity[1] * ps->velocity[1]);
+
+	if (xy_len > 0.1f) {
+		if (self->spawnflags & 8) {
+			// Minimum boost: only scale up, never slow the player down
+			if (xy_len < self->speed) {
+				scale = self->speed / xy_len;
+				ps->velocity[0] *= scale;
+				ps->velocity[1] *= scale;
+			}
+		} else {
+			// Full override: set XY speed exactly to self->speed
+			scale = self->speed / xy_len;
+			ps->velocity[0] *= scale;
+			ps->velocity[1] *= scale;
+		}
+	}
+
+	if (self->spawnflags & 2) {
+		// Also set Z velocity
+		ps->velocity[2] = self->speed;
+	}
+}
+
+void SP_target_speed(gentity_t *self) {
+	self->use = use_target_speed;
+}
+
 void SP_target_restrict(gentity_t *self)//JAPRO Onlybhop
 {
 	if (self->spawnflags & RESTRICT_FLAG_DISABLE)
 		self->use = Use_target_restrict_off;
 	else
 		self->use = Use_target_restrict_on;
+}
+
+// Q3 defrag item_haste: sets pers.haste on pickup, giving CPM/OCPM the 1.3x speed multiplier.
+// Respawns after self->wait seconds; wait = -1 or unset = one-time pickup.
+static void item_haste_respawn( gentity_t *self ) {
+	self->r.contents = CONTENTS_TRIGGER;
+	trap->LinkEntity( (sharedEntity_t *)self );
+}
+
+static void Touch_item_haste( gentity_t *self, gentity_t *other, trace_t *trace ) {
+	if ( !other->client ) return;
+	if ( other->client->ps.pm_type != PM_NORMAL ) return;
+	if ( other->client->pers.haste ) return; // already have it
+
+	other->client->pers.haste = qtrue;
+	trap->SendServerCommand( other->s.number, "print \"^2Haste!\n\"" );
+	G_Sound( other, CHAN_AUTO, G_SoundIndex( "sound/player/fry.wav" ) );
+
+	// remove (or schedule respawn)
+	self->r.contents = 0;
+	trap->LinkEntity( (sharedEntity_t *)self );
+
+	if ( self->wait > 0 ) {
+		self->think     = item_haste_respawn;
+		self->nextthink = level.time + (int)(self->wait * 1000.0f);
+	} else if ( self->wait == 0 ) {
+		// default Q3 behaviour: 30 second respawn
+		self->think     = item_haste_respawn;
+		self->nextthink = level.time + 30000;
+	}
+	// wait < 0: one-time only, never respawn
+}
+
+void SP_item_haste( gentity_t *self ) {
+	// Point entity — build a small touch box around the item's origin
+	VectorSet( self->r.mins, -15, -15, -15 );
+	VectorSet( self->r.maxs,  15,  15,  15 );
+	self->r.contents = CONTENTS_TRIGGER;
+	self->touch      = Touch_item_haste;
+	trap->LinkEntity( (sharedEntity_t *)self );
+	// Auto-enable map haste — no mapconfigs entry needed
+	trap->Cvar_Set( "g_mapHaste", "1" );
 }
 
 void SP_trigger_newpush(gentity_t *self)//JAPRO Newpush

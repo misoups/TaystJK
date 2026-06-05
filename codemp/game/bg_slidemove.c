@@ -971,6 +971,180 @@ qboolean	PM_SlideMove( qboolean gravity ) {
 
 /*
 ==================
+PM_Q2StepSlideMove_ -- inner Q2/Q3 slide-along-surfaces loop (no gravity, no stepping)
+Used by QuaJK movement style for correct ramp/slope behaviour.
+==================
+*/
+#define MIN_STEP_NORMAL 0.7f
+static void PM_Q2StepSlideMove_( void )
+{
+	int			bumpcount, numbumps;
+	vec3_t		dir;
+	float		d;
+	int			numplanes;
+	vec3_t		normal, planes[MAX_CLIP_PLANES];
+	vec3_t		primal_velocity;
+	int			i, j;
+	trace_t		trace;
+	vec3_t		end;
+	float		time_left;
+	const float	overbounce = 1.01f; // Q2/Q3 standard (vs JKA's 1.001)
+
+	numbumps = 4;
+
+	VectorCopy( pm->ps->velocity, primal_velocity );
+	numplanes = 0;
+
+	time_left = pml.frametime;
+
+	for ( bumpcount = 0; bumpcount < numbumps; bumpcount++ )
+	{
+		for ( i = 0; i < 3; i++ )
+			end[i] = pm->ps->origin[i] + time_left * pm->ps->velocity[i];
+
+		pm->trace( &trace, pm->ps->origin, pm->mins, pm->maxs, end, pm->ps->clientNum, pm->tracemask );
+
+		if ( trace.allsolid ) {
+			pm->ps->velocity[2] = 0;
+			return;
+		}
+
+		if ( trace.fraction > 0 ) {
+			VectorCopy( trace.endpos, pm->ps->origin );
+			numplanes = 0;
+		}
+
+		if ( trace.fraction == 1 )
+			break; // moved the entire distance
+
+		if ( pm->numtouch < MAXTOUCH && trace.entityNum != ENTITYNUM_WORLD ) {
+			pm->touchents[pm->numtouch] = trace.entityNum;
+			pm->numtouch++;
+		}
+
+		time_left -= time_left * trace.fraction;
+
+		if ( numplanes >= MAX_CLIP_PLANES ) {
+			VectorCopy( vec3_origin, pm->ps->velocity );
+			break;
+		}
+
+		VectorCopy( trace.plane.normal, normal );
+
+		// nudge velocity along the plane if we hit the same plane twice
+		for ( i = 0; i < numplanes; i++ ) {
+			if ( DotProduct( normal, planes[i] ) > 0.99f ) {
+				VectorAdd( normal, pm->ps->velocity, pm->ps->velocity );
+				break;
+			}
+		}
+		if ( i < numplanes )
+			continue;
+
+		VectorCopy( normal, planes[numplanes] );
+		numplanes++;
+
+		// clip velocity against each collected plane
+		for ( i = 0; i < numplanes; i++ )
+		{
+			PM_ClipVelocity( pm->ps->velocity, planes[i], pm->ps->velocity, overbounce );
+
+			if ( planes[i][2] >= MIN_WALK_NORMAL )
+				pml.clipped = qtrue;
+
+			for ( j = 0; j < numplanes; j++ )
+				if ( j != i )
+					if ( DotProduct( pm->ps->velocity, planes[j] ) < 0 )
+						break; // not ok
+			if ( j == numplanes )
+				break;
+		}
+
+		if ( i == numplanes ) {
+			// crease: go along intersection of two planes
+			if ( numplanes != 2 ) {
+				VectorCopy( vec3_origin, pm->ps->velocity );
+				break;
+			}
+			CrossProduct( planes[0], planes[1], dir );
+			d = DotProduct( dir, pm->ps->velocity );
+			VectorScale( dir, d, pm->ps->velocity );
+		}
+
+		// stop if velocity reversed against original direction
+		if ( DotProduct( pm->ps->velocity, primal_velocity ) <= 0 ) {
+			VectorCopy( vec3_origin, pm->ps->velocity );
+			break;
+		}
+	}
+
+	if ( pm->ps->pm_time ) {
+		VectorCopy( primal_velocity, pm->ps->velocity );
+	}
+}
+
+/*
+==================
+PM_Q2StepSlideMove -- outer wrapper: applies gravity and step-up/step-down logic
+==================
+*/
+void PM_Q2StepSlideMove( qboolean gravity )
+{
+	vec3_t		start_o, start_v;
+	vec3_t		down_o, down_v;
+	trace_t		trace;
+	float		down_dist, up_dist;
+	vec3_t		up, down;
+
+	if ( gravity )
+		pm->ps->velocity[2] -= pm->ps->gravity * pml.frametime;
+
+	VectorCopy( pm->ps->origin, start_o );
+	VectorCopy( pm->ps->velocity, start_v );
+
+	PM_Q2StepSlideMove_();
+
+	VectorCopy( pm->ps->origin, down_o );
+	VectorCopy( pm->ps->velocity, down_v );
+
+	VectorCopy( start_o, up );
+	up[2] += STEPSIZE;
+
+	pm->trace( &trace, up, pm->mins, pm->maxs, up, pm->ps->clientNum, pm->tracemask );
+	if ( trace.allsolid )
+		return; // can't step up
+
+	// try sliding from one step higher
+	VectorCopy( up, pm->ps->origin );
+	VectorCopy( start_v, pm->ps->velocity );
+
+	PM_Q2StepSlideMove_();
+
+	// push back down to ground
+	VectorCopy( pm->ps->origin, down );
+	down[2] -= STEPSIZE;
+	pm->trace( &trace, pm->ps->origin, pm->mins, pm->maxs, down, pm->ps->clientNum, pm->tracemask );
+	if ( !trace.allsolid )
+		VectorCopy( trace.endpos, pm->ps->origin );
+
+	// pick whichever path covered more horizontal distance
+	VectorCopy( pm->ps->origin, up );
+	down_dist = ( down_o[0] - start_o[0] ) * ( down_o[0] - start_o[0] )
+	          + ( down_o[1] - start_o[1] ) * ( down_o[1] - start_o[1] );
+	up_dist   = ( up[0]    - start_o[0] ) * ( up[0]    - start_o[0] )
+	          + ( up[1]    - start_o[1] ) * ( up[1]    - start_o[1] );
+
+	if ( down_dist >= up_dist || trace.plane.normal[2] < MIN_STEP_NORMAL ) {
+		VectorCopy( down_o, pm->ps->origin );
+		VectorCopy( down_v, pm->ps->velocity );
+		return;
+	}
+	// keep Z velocity from the no-step path (correct for ramp exits)
+	pm->ps->velocity[2] = down_v[2];
+}
+
+/*
+==================
 PM_StepSlideMove
 
 ==================
@@ -988,6 +1162,12 @@ void PM_StepSlideMove( qboolean gravity ) {
 	qboolean skipStep = qfalse;
 	int NEW_STEPSIZE = STEPSIZE;
 	const int moveStyle = PM_GetMovePhysics();
+
+	// QuaJK uses Q2/Q3 surface-slide algorithm for correct ramp behaviour
+	if (moveStyle == MV_QUAJK) {
+		PM_Q2StepSlideMove(gravity);
+		return;
+	}
 
 	if (moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_Q3 || moveStyle == MV_WSW || moveStyle == MV_RJQ3 || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM) {
 		if (pm->ps->velocity[2] > 0 && pm->cmd.upmove > 0) {

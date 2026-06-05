@@ -45,7 +45,6 @@ cvar_t		*con_notifyvote;
 cvar_t		*con_height;
 cvar_t		*con_scale;
 cvar_t		*con_timestamps;
-cvar_t		*con_datetime;
 
 #define	DEFAULT_CONSOLE_WIDTH	78
 
@@ -665,7 +664,6 @@ void Con_Init (void) {
 
 	con_scale = Cvar_Get ("con_scale", "1", CVAR_ARCHIVE_ND, "Scale console font");
 	con_timestamps = Cvar_Get ("con_timestamps", "2", CVAR_ARCHIVE_ND, "Display timestamps infront of console lines");
-	con_datetime = Cvar_Get ("con_datetime", "0", CVAR_ARCHIVE_ND, "Display human readable date/time in console");
 
 	Field_Clear( &g_consoleField );
 	g_consoleField.widthInChars = DEFAULT_CONSOLE_WIDTH;
@@ -1038,7 +1036,10 @@ void Con_DrawSolidConsole( float frac ) {
 	int				row;
 	int				lines;
 	int				currentColor;
-
+	struct tm		*newtime;
+	char			am_pm[] = "AM";
+	time_t			rawtime;
+	char			ts[24];
 
 	lines = (int) (cls.glconfig.vidHeight * frac);
 	if (lines <= 0)
@@ -1072,40 +1073,41 @@ void Con_DrawSolidConsole( float frac ) {
 			re->DrawStretchPic(0, 0, SCREEN_WIDTH, (float)y, 0, 0, 1, 1, cls.consoleShader);
 	}
 
-	// draw the bottom bar and version number
-
+	// draw the bottom bar
 	re->SetColor( console_color );
 	re->DrawStretchPic( 0, y, SCREEN_WIDTH, 2, 0, 0, 0, 0, cls.whiteShader );
 
-	i = strlen( JK_VERSION );
+	// Row 1 (topmost): map name
+	if ( cl.mapname[0] ) {
+		i = strlen( cl.mapname );
+		for ( x = 0; x < i; x++ ) {
+			SCR_DrawSmallChar( cls.glconfig.vidWidth - ( i - x + 1 ) * con.charWidth,
+				lines - ( con.charHeight * 3 + con.charHeight / 2 ), cl.mapname[x] );
+		}
+	}
 
-	for (x=0 ; x<i ; x++) {
+	// Row 2: build-date version string  "TaystJK: [MM/DD/YYYY]"
+	i = strlen( JK_VERSION );
+	for ( x = 0; x < i; x++ ) {
 		SCR_DrawSmallChar( cls.glconfig.vidWidth - ( i - x + 1 ) * con.charWidth,
-			(lines-(con.charHeight+con.charHeight/2)), JK_VERSION[x] );
+			lines - ( con.charHeight * 2 + con.charHeight / 2 ), JK_VERSION[x] );
+	}
+
+	// Row 3 (bottom): current local time  "Www Mmm DD HH:MM:SS AM/PM"
+	time( &rawtime );
+	newtime = localtime( &rawtime );
+	if ( newtime->tm_hour >= 12 ) Q_strncpyz( am_pm, "PM", sizeof(am_pm) );
+	if ( newtime->tm_hour > 12 )  newtime->tm_hour -= 12;
+	if ( newtime->tm_hour == 0 )  newtime->tm_hour  = 12;
+	Com_sprintf( ts, sizeof(ts), "%.19s %s ", asctime(newtime), am_pm );
+	i = strlen( ts );
+	for ( x = 0; x < i; x++ ) {
+		SCR_DrawSmallChar( cls.glconfig.vidWidth - ( i - x ) * con.charWidth,
+			lines - ( con.charHeight + con.charHeight / 2 ), ts[x] );
 	}
 
 	// draw the input prompt, user text, and cursor if desired
 	Con_DrawInput ();
-
-	if (con_datetime->integer) {
-		struct tm		*newtime;
-		time_t			rawtime;
-		qboolean		AM = qtrue;
-		char			ts[24];
-
-		// Draw time and date
-		time(&rawtime);
-		newtime = localtime(&rawtime);
-		if (newtime->tm_hour >= 12) AM = qfalse;
-		if (newtime->tm_hour > 12) newtime->tm_hour -= 12;
-		if (newtime->tm_hour == 0) newtime->tm_hour = 12;
-		Com_sprintf(ts, sizeof(ts), "%.19s %s ", asctime(newtime), AM ? "AM" : "PM" );
-		i = strlen(ts);
-
-		for (x = 0; x<i; x++) {
-			SCR_DrawSmallChar(cls.glconfig.vidWidth - (i - x) * con.charWidth, lines - 3 * (con.charHeight + con.charHeight / 2), ts[x]);
-		}
-	}
 
 	// draw the text
 	con.vislines = lines;

@@ -118,7 +118,7 @@ static void vk_alloc_attachment_memory( void )
     }
 
     // allocate and bind memory
-    VK_ALLOCATE_MEMORY_CHECK(vk.device, &alloc_info, &memory, "attachment memory");
+    VK_CHECK(qvkAllocateMemory(vk.device, &alloc_info, NULL, &memory ) );
 
     vk.image_memory[vk.image_memory_count++] = memory;
 
@@ -575,7 +575,7 @@ void vk_destroy_attachments( void )
 
     // image memory
     for (i = 0; i < vk.image_memory_count; i++) {
-        VK_FREE_MEMORY(vk.device, vk.image_memory[i]);
+        qvkFreeMemory(vk.device, vk.image_memory[i], NULL);
     }
 
     vk.image_memory_count = 0;

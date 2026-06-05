@@ -469,10 +469,13 @@ static void SetFarClip( void )
 			farthestCornerDistance = distance;
 		}
 	}
-	// Bring in the zFar to the distanceCull distance
-	// The sky renders at zFar so need to move it out a little
-	// ...and make sure there is a minimum zfar to prevent problems
-	tr.viewParms.zFar = Com_Clamp(2048.0f, tr.distanceCull * (1.732), sqrtf( farthestCornerDistance ));
+	// Bring in the zFar to the distanceCull distance.
+	// If r_distanceCull is 0 (disabled), use the full map extent like jk2mv does.
+	if (r_distanceCull && r_distanceCull->value == 0.0f) {
+		tr.viewParms.zFar = Com_Clamp(2048.0f, sqrtf( farthestCornerDistance ), sqrtf( farthestCornerDistance ));
+	} else {
+		tr.viewParms.zFar = Com_Clamp(2048.0f, tr.distanceCull * (1.732), sqrtf( farthestCornerDistance ));
+	}
 
 	/*
 	if (r_shadows->integer == 2)

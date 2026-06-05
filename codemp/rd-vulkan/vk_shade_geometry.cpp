@@ -95,10 +95,6 @@ void vk_update_mvp( const float *m ) {
 
 void vk_set_2d( void ) 
 {
-	if ( backEnd.projection2D ) {
-		return;
-	}
-
 	backEnd.projection2D = qtrue;
 
 	vk_update_mvp(NULL);
@@ -482,9 +478,8 @@ void vk_create_storage_buffer( vk_storage_buffer_t *out, uint32_t size, const ch
 	
 	desc.size = size;
 	desc.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-
-	VK_CREATE_BUFFER(vk.device, &desc, &out->buffer, va( "%s buffer", name ));
-
+	VK_CHECK( qvkCreateBuffer( vk.device, &desc, NULL, &out->buffer ) );
+	
 	qvkGetBufferMemoryRequirements( vk.device, out->buffer, &memory_requirements );
 
 	memory_type_bits = memory_requirements.memoryTypeBits;
@@ -494,8 +489,7 @@ void vk_create_storage_buffer( vk_storage_buffer_t *out, uint32_t size, const ch
 	alloc_info.pNext = NULL;
 	alloc_info.allocationSize = memory_requirements.size;
 	alloc_info.memoryTypeIndex = memory_type;
-	VK_ALLOCATE_MEMORY_CHECK(vk.device, &alloc_info, &out->memory, va( "%s memory", name ) );
-
+	VK_CHECK( qvkAllocateMemory( vk.device, &alloc_info, NULL, &out->memory) );
 	VK_CHECK( qvkMapMemory( vk.device, out->memory, 0, VK_WHOLE_SIZE, 0, (void**)&out->buffer_ptr) );
 
 	Com_Memset( out->buffer_ptr, 0, memory_requirements.size );
@@ -684,7 +678,7 @@ void vk_create_indirect_buffer( VkDeviceSize size )
 	for (i = 0; i < NUM_COMMAND_BUFFERS; i++) {
 		desc.size = size;
 		desc.usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-		VK_CREATE_BUFFER(vk.device, &desc, &vk.tess[i].indirect_buffer, "indirect_buffer");
+		VK_CHECK(qvkCreateBuffer(vk.device, &desc, NULL, &vk.tess[i].indirect_buffer));
 
 		qvkGetBufferMemoryRequirements(vk.device, vk.tess[i].indirect_buffer, &vb_memory_requirements);
 	}
@@ -698,7 +692,7 @@ void vk_create_indirect_buffer( VkDeviceSize size )
 
 	vk_debug("Allocate device memory for Indirect Buffer: %ld bytes. \n", alloc_info.allocationSize);
 
-	VK_ALLOCATE_MEMORY_CHECK(vk.device, &alloc_info, &vk.indirect_buffer_memory, "indirect_memory" );
+	VK_CHECK(qvkAllocateMemory(vk.device, &alloc_info, NULL, &vk.indirect_buffer_memory));
 	VK_CHECK(qvkMapMemory(vk.device, vk.indirect_buffer_memory, 0, VK_WHOLE_SIZE, 0, &data));
 
 	indirect_buffer_offset = 0;
@@ -745,7 +739,7 @@ void vk_create_vertex_buffer( VkDeviceSize size )
 	for (i = 0; i < NUM_COMMAND_BUFFERS; i++) {
 		desc.size = size;
 		desc.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		VK_CREATE_BUFFER(vk.device, &desc, &vk.tess[i].vertex_buffer, "vertex_buffer");
+		VK_CHECK(qvkCreateBuffer(vk.device, &desc, NULL, &vk.tess[i].vertex_buffer));
 
 		qvkGetBufferMemoryRequirements(vk.device, vk.tess[i].vertex_buffer, &vb_memory_requirements);
 	}
@@ -759,7 +753,7 @@ void vk_create_vertex_buffer( VkDeviceSize size )
 
 	vk_debug("Allocate device memory for Vertex Buffer: %ld bytes. \n", alloc_info.allocationSize);
 
-	VK_ALLOCATE_MEMORY_CHECK(vk.device, &alloc_info, &vk.geometry_buffer_memory, "vertex_memory" );
+	VK_CHECK(qvkAllocateMemory(vk.device, &alloc_info, NULL, &vk.geometry_buffer_memory));
 	VK_CHECK(qvkMapMemory(vk.device, vk.geometry_buffer_memory, 0, VK_WHOLE_SIZE, 0, &data));
 
 	vertex_buffer_offset = 0;
@@ -2691,33 +2685,31 @@ void RB_StageIteratorGeneric( void )
 
 		for (stage = 1; stage < tess.shader->numUnfoggedPasses; stage++)
 		{
-			pStage = tess.xstages[stage];
+			if (tess.xstages[stage]->ss && tess.xstages[stage]->ss->type)
+			{
+				if (!ssFound) {
+					// don't cringe, this is a temporary solution. but slow..
+					// we are still reading from tess.xyz while also writing a group of surfacesprites to it.
+					// which means the next group will read from garbaged surface data.
+					// we duplicate the necessary tess data to ssInput and use that to read from.
+					// yeah ..
+					// surfacesprites currently don't work with vbo enabled.
+					// need to look at the the methods from OpenJK repo
 
-			if ( !pStage || !pStage->ss || !pStage->ss->type )
-				continue;
+					ssInput.numIndexes = tess.numIndexes;
+					ssInput.numVertexes = tess.numVertexes;
 
-			if (!ssFound) {
-				// don't cringe, this is a temporary solution. but slow..
-				// we are still reading from tess.xyz while also writing a group of surfacesprites to it.
-				// which means the next group will read from garbaged surface data.
-				// we duplicate the necessary tess data to ssInput and use that to read from.
-				// yeah ..
-				// surfacesprites currently don't work with vbo enabled.
-				// need to look at the the methods from OpenJK repo
+					memcpy(ssInput.indexes, tess.indexes, sizeof(tess.indexes));
+					memcpy(ssInput.xyz, tess.xyz, sizeof(tess.xyz));
+					memcpy(ssInput.normal, tess.normal, sizeof(tess.normal));
+					memcpy(ssInput.vertexColors, tess.vertexColors, sizeof(tess.vertexColors));
 
-				ssInput.numIndexes = tess.numIndexes;
-				ssInput.numVertexes = tess.numVertexes;
+					ssFound = qtrue;
+				}
 
-				memcpy(ssInput.indexes, tess.indexes, sizeof(tess.indexes));
-				memcpy(ssInput.xyz, tess.xyz, sizeof(tess.xyz));
-				memcpy(ssInput.normal, tess.normal, sizeof(tess.normal));
-				memcpy(ssInput.vertexColors, tess.vertexColors, sizeof(tess.vertexColors));
-
-				ssFound = qtrue;
+				// Draw the surfacesprite
+				RB_DrawSurfaceSprites(tess.xstages[stage], &ssInput);
 			}
-
-			// Draw the surfacesprite
-			RB_DrawSurfaceSprites( pStage, &ssInput );
 		}
 	}
 }

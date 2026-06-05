@@ -30,7 +30,6 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "tr_WorldEffects.h"
 #include "qcommon/MiniHeap.h"
 #include "ghoul2/g2_local.h"
-#include "tr_cache.h"
 
 glconfig_t	glConfig;
 glconfigExt_t glConfigExt;
@@ -227,7 +226,7 @@ static cvar_t	*r_maxpolyverts;
 int		max_polys;
 int		max_polyverts;
 
-cvar_t	*r_modelpoolmegs; // unused
+cvar_t	*r_modelpoolmegs;
 
 /*
 Ghoul2 Insert Start
@@ -749,9 +748,9 @@ static consoleCommand_t	commands[] = {
 	{ "screenshot_tga",		R_ScreenShot_f },
 	{ "gfxinfo",			GfxInfo_f },
 	{ "r_we",				R_WorldEffect_f },
-	//{ "imagecacheinfo",		RE_RegisterImages_Info_f },
+	{ "imagecacheinfo",		RE_RegisterImages_Info_f },
 	{ "modellist",			R_Modellist_f },
-	//{ "modelcacheinfo",		RE_RegisterModels_Info_f },
+	{ "modelcacheinfo",		RE_RegisterModels_Info_f },
 	{ "r_cleardecals",		RE_ClearDecals },
 	{ "remapSky",			R_RemapSkyShader_f },
 	{ "clearRemaps",		R_ClearRemaps_f },
@@ -808,7 +807,7 @@ void R_Register( void )
 	r_texturebits						= ri.Cvar_Get( "r_texturebits",						"0",						CVAR_ARCHIVE_ND|CVAR_LATCH, "" );
 	r_texturebitslm						= ri.Cvar_Get( "r_texturebitslm",					"0",						CVAR_ARCHIVE_ND|CVAR_LATCH, "" );
 	r_overBrightBits					= ri.Cvar_Get( "r_overBrightBits",					"0",						CVAR_ARCHIVE_ND|CVAR_LATCH, "" );
-	r_mapOverBrightBits					= ri.Cvar_Get( "r_mapOverBrightBits",				"0",						CVAR_ARCHIVE_ND|CVAR_LATCH, "" );
+	r_mapOverBrightBits					= ri.Cvar_Get( "r_mapOverBrightBits",				"2",						CVAR_ARCHIVE_ND|CVAR_LATCH, "" );
 	r_simpleMipMaps						= ri.Cvar_Get( "r_simpleMipMaps",					"1",						CVAR_ARCHIVE_ND|CVAR_LATCH, "" );
 	r_vertexLight						= ri.Cvar_Get( "r_vertexLight",						"0",						CVAR_ARCHIVE|CVAR_LATCH, "" );
 	r_uiFullScreen						= ri.Cvar_Get( "r_uifullscreen",					"0",						CVAR_NONE, "" );
@@ -1099,8 +1098,6 @@ void R_Init( void ) {
 		RE_SetLightStyle(i, -1);
 	}
 
-	R_InitImagesPool();
-
 	vk_create_window();		// Vulkan
 
 #ifdef USE_VBO
@@ -1248,38 +1245,6 @@ extern qboolean R_InitializeWireframeAutomap( void ); //tr_world.cpp
 
 extern qhandle_t RE_RegisterServerSkin( const char *name );
 
-void C_LevelLoadBegin(const char *psMapName, ForceReload_e eForceReload)
-{
-	static char sPrevMapName[MAX_QPATH]={0};
-	bool bDeleteModels = eForceReload == eForceReload_MODELS || eForceReload == eForceReload_ALL;
-
-	if( bDeleteModels )
-		CModelCache->DeleteAll();
-	else if( ri.Cvar_VariableIntegerValue( "sv_pure" ) )
-		CModelCache->DumpNonPure();
-
-	tr.numBSPModels = 0;
-
-	/* If we're switching to the same level, don't increment current level */
-	if (Q_stricmp( psMapName,sPrevMapName ))
-	{
-		Q_strncpyz( sPrevMapName, psMapName, sizeof(sPrevMapName) );
-		tr.currentLevel++;
-	}
-}
-
-int C_GetLevel( void )
-{
-	return tr.currentLevel;
-}
-
-void C_LevelLoadEnd( void )
-{
-	CModelCache->LevelLoadEnd( qfalse );
-	ri.SND_RegisterAudio_LevelLoadEnd( qfalse );
-	ri.S_RestartMusic();
-}
-
 static const cplane_t* RE_GetFrustum(void)
 {
 	return tr.viewParms.frustum;
@@ -1372,11 +1337,11 @@ Q_EXPORT refexport_t* QDECL GetRefAPI( int apiVersion, refimport_t *rimp ) {
 	re.InitializeWireframeAutomap			= R_InitializeWireframeAutomap; //tr_world.cpp
 	re.AddWeatherZone						= RE_AddWeatherZone;
 	re.WorldEffectCommand					= RE_WorldEffectCommand;
-	re.RegisterMedia_LevelLoadBegin			= C_LevelLoadBegin;
-	re.RegisterMedia_LevelLoadEnd			= C_LevelLoadEnd;
-	re.RegisterMedia_GetLevel				= C_GetLevel;
-	re.RegisterImages_LevelLoadEnd			= C_Images_LevelLoadEnd;
-	re.RegisterModels_LevelLoadEnd			= C_Models_LevelLoadEnd;
+	re.RegisterMedia_LevelLoadBegin			= RE_RegisterMedia_LevelLoadBegin;
+	re.RegisterMedia_LevelLoadEnd			= RE_RegisterMedia_LevelLoadEnd;
+	re.RegisterMedia_GetLevel				= RE_RegisterMedia_GetLevel;
+	re.RegisterImages_LevelLoadEnd			= RE_RegisterImages_LevelLoadEnd;
+	re.RegisterModels_LevelLoadEnd			= RE_RegisterModels_LevelLoadEnd;
 
 	// AVI recording
 	re.TakeVideoFrame						= RE_TakeVideoFrame;

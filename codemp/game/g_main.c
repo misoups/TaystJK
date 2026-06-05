@@ -249,6 +249,18 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 
 	G_RegisterCvars();
 
+	// Reset per-map cvars so they don't bleed across map changes,
+	// then auto-exec a per-map config if one exists (mapconfigs/<mapname>.cfg).
+	// Admins place e.g. "seta g_mapHaste 1" in that file for haste maps.
+	{
+		vmCvar_t mapname;
+		trap->Cvar_Register( &mapname, "mapname", "", CVAR_SERVERINFO | CVAR_ROM );
+		trap->Cvar_Set( "g_mapHaste", "0" );
+		trap->SendConsoleCommand( EXEC_APPEND, va( "exec mapconfigs/%s.cfg\n", mapname.string ) );
+	}
+
+	G_CrossServerInit();
+
 	G_ProcessIPBans();
 
 	G_InitMemory();
@@ -565,6 +577,8 @@ G_ShutdownGame
 void G_ShutdownGame( int restart ) {
 	int i = 0;
 	gentity_t *ent;
+
+	G_CrossServerShutdown();
 
 	//This is for the previous map, so do this here, not in initgame so cl->pers stuff does not get cleared.
 	G_AddSimpleStatsToFile();//Add previous maps stats from memory to file.
@@ -3657,6 +3671,8 @@ void G_RunFrame( int levelTime ) {
 	level.framenum++;
 	level.previousTime = level.time;
 	level.time = levelTime;
+
+	G_CrossServerPoll( levelTime );
 
 
 

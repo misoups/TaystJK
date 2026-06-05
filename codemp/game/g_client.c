@@ -2992,6 +2992,8 @@ char *ClientConnect( int clientNum, qboolean firstTime, qboolean isBot ) {
 	// don't do the "xxx connected" messages if they were caried over from previous level
 	if ( firstTime ) {
 		trap->SendServerCommand( -1, va("print \"%s" S_COLOR_WHITE " %s\n\"", client->pers.netname, G_GetStringEdString("MP_SVGAME", "PLCONNECT")) );
+		if ( !(ent->r.svFlags & SVF_BOT) )
+			G_CrossServerBroadcast( "connect", client->pers.netname, "" );
 	}
 
 	if ( level.gametype >= GT_TEAM &&
@@ -3170,10 +3172,14 @@ void ClientBegin( int clientNum, qboolean allowTeamReset ) {
 		client->sess.raceMode = qtrue;
 	if (client->sess.sessionTeam != TEAM_FREE && client->sess.sessionTeam != TEAM_SPECTATOR)
 		client->sess.raceMode = qfalse;
-	else if (!g_raceMode.integer) 
+	else if (!g_raceMode.integer)
 		client->sess.raceMode = qfalse;
 
-	if (client->sess.raceMode) 
+	// Non-TaystJK clients cannot predict jaPRO physics — keep them in vanilla mode
+	if (!client->pers.isJAPRO)
+		client->sess.raceMode = qfalse;
+
+	if (client->sess.raceMode)
 		client->ps.stats[STAT_RACEMODE] = 1;
 	else
 		client->ps.stats[STAT_RACEMODE] = 0;
@@ -3201,6 +3207,8 @@ void ClientBegin( int clientNum, qboolean allowTeamReset ) {
 		if ( level.gametype != GT_DUEL || level.gametype == GT_POWERDUEL ) {
 			trap->SendServerCommand( -1, va("print \"%s" S_COLOR_WHITE " %s\n\"", client->pers.netname, G_GetStringEdString("MP_SVGAME", "PLENTER")) );
 		}
+		if ( !(ent->r.svFlags & SVF_BOT) )
+			G_CrossServerBroadcast( "join", client->pers.netname, "" );
 	}
 	G_LogPrintf( "ClientBegin: %i\n", clientNum );
 
@@ -4071,6 +4079,11 @@ void ClientSpawn(gentity_t *ent) {
 					spawn_angles[YAW] = client->pers.respawnAngle;
 				}//sad hack
 
+				if (client->sess.raceMode && VectorLength(client->pers.savedSpawnOrigin)) {
+					VectorCopy(client->pers.savedSpawnOrigin, spawn_origin);
+					spawn_angles[YAW] = client->pers.savedSpawnAngle;
+				}
+
 			}
 		}
 	}
@@ -4176,6 +4189,7 @@ void ClientSpawn(gentity_t *ent) {
 	client->ps.persistant[PERS_TEAM] = client->sess.sessionTeam;
 
 	client->airOutTime = level.time + 12000;
+	client->lastHereTime = level.time; // prevent auto-spec from firing immediately after spawn
 
 	// set max health
 	if (level.gametype == GT_SIEGE && client->siegeClass != -1)
@@ -4246,6 +4260,9 @@ void ClientSpawn(gentity_t *ent) {
 	if (client->sess.sessionTeam != TEAM_FREE && client->sess.sessionTeam != TEAM_SPECTATOR)
 		client->sess.raceMode = qfalse;
 	else if (!g_raceMode.integer)
+		client->sess.raceMode = qfalse;
+
+	if (!client->pers.isJAPRO)
 		client->sess.raceMode = qfalse;
 
 	if (client->sess.raceMode)
@@ -4581,8 +4598,13 @@ void ClientSpawn(gentity_t *ent) {
 
 	if (client->sess.raceMode) {
 		ent->health = client->ps.stats[STAT_HEALTH] = client->ps.stats[STAT_MAX_HEALTH] = 100;
-		if (client->sess.movementStyle == MV_COOP_JKA)
-			client->ps.fd.forcePowerLevel[FP_LEVITATION] = 1;
+		{
+			char _info[MAX_INFO_STRING] = {0};
+			trap->GetServerinfo(_info, sizeof(_info));
+			client->ps.fd.forcePowerLevel[FP_LEVITATION] =
+				Q_stricmpn(Info_ValueForKey(_info, "mapname"), "acrobat", 7) == 0 ? 3 : 1;
+		}
+		client->noclipUsed = qfalse; // respawn clears noclip invalidation
 	}
 	// health will count down towards max_health
 	else if (level.gametype == GT_SIEGE &&
@@ -4960,6 +4982,8 @@ void ClientDisconnect( int clientNum ) {
 		TossClientItems( ent );
 	}
 
+	if ( !(ent->r.svFlags & SVF_BOT) && ent->client->sess.sessionTeam != TEAM_SPECTATOR )
+		G_CrossServerBroadcast( "quit", ent->client->pers.netname, "" );
 	G_LogPrintf( "ClientDisconnect: %i [%s] (%s) \"%s^7\"\n", clientNum, ent->client->sess.IP, ent->client->pers.guid, ent->client->pers.netname );
 
 	// if we are playing in tourney mode, give a win to the other player and clear his frags for this round

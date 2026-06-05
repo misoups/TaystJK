@@ -838,6 +838,8 @@ void Cmd_Noclip_f( gentity_t *ent ) {
 			if (target->client->sess.raceMode && target->client->noclip && !target->client->pers.practice)
 				AmTeleportPlayer( target, target->client->ps.origin, target->client->ps.viewangles, qtrue, qtrue, qfalse ); //Good
 			target->client->noclip = !target->client->noclip;
+			if (target->client->noclip && target->client->sess.raceMode && !target->client->pers.practice)
+				target->client->noclipUsed = qtrue; // flag race as invalidated until /amtele or /kill
 			if (!sv_cheats.integer && !target->client->pers.practice)
 				ResetPlayerTimers(target, qtrue);
 			return;
@@ -849,6 +851,8 @@ void Cmd_Noclip_f( gentity_t *ent ) {
 			if (ent->client->sess.raceMode && ent->client->noclip && !ent->client->pers.practice)
 				AmTeleportPlayer( ent, ent->client->ps.origin, ent->client->ps.viewangles, qtrue, qtrue, qfalse ); //Good
 			ent->client->noclip = !ent->client->noclip;
+			if (ent->client->noclip && ent->client->sess.raceMode && !ent->client->pers.practice)
+				ent->client->noclipUsed = qtrue; // flag race as invalidated until /amtele or /kill
 			if (!sv_cheats.integer && !ent->client->pers.practice)
 				ResetPlayerTimers(ent, qtrue);
 			return;
@@ -861,6 +865,8 @@ void Cmd_Noclip_f( gentity_t *ent ) {
 		if (ent->client->sess.raceMode && ent->client->noclip && !ent->client->pers.practice)
 			AmTeleportPlayer( ent, ent->client->ps.origin, ent->client->ps.viewangles, qtrue, qtrue, qfalse ); //Good
 		ent->client->noclip = !ent->client->noclip;
+		if (ent->client->noclip && ent->client->sess.raceMode && !ent->client->pers.practice)
+			ent->client->noclipUsed = qtrue; // flag race as invalidated until /amtele or /kill
 		if (!sv_cheats.integer && !ent->client->pers.practice)
 			ResetPlayerTimers(ent, qtrue);
 	}
@@ -987,7 +993,14 @@ void G_Kill( gentity_t *ent ) {
 Cmd_Kill_f
 =================
 */
+extern void RaceMode_TeleportOnDeath( gentity_t *self );
 void Cmd_Kill_f( gentity_t *ent ) {
+	// Race mode: don't die, teleport to amtelemark or map spawn (EternalJK2/MVSDK style)
+	if (ent->client && ent->client->sess.raceMode) {
+		RaceMode_TeleportOnDeath( ent );
+		return;
+	}
+
 	if ((level.gametype == GT_DUEL || level.gametype == GT_POWERDUEL) &&
 		level.numPlayingClients > 1 && !level.warmupTime)
 	{
@@ -2338,6 +2351,21 @@ static void Cmd_Say_f( gentity_t *ent ) {
 	G_Say( ent, NULL, SAY_ALL, p );
 }
 
+static void Cmd_SayCross_f( gentity_t *ent ) {
+	char *p = NULL;
+
+	if ( trap->Argc() < 2 ) {
+		trap->SendServerCommand( ent - g_entities, "print \"Usage: /say_cross <message>\n\"" );
+		return;
+	}
+
+	p = ConcatArgs( 1 );
+	if ( strlen( p ) >= MAX_SAY_TEXT )
+		p[MAX_SAY_TEXT - 1] = '\0';
+
+	G_CrossServerSay( ent, p );
+}
+
 static void Cmd_Clansay_f( gentity_t *ent ) {
 	char *p = NULL;
 
@@ -2736,27 +2764,62 @@ qboolean G_VoteKick( gentity_t *ent, int numArgs, const char *arg1, const char *
 
 const char *G_GetArenaInfoByMap( const char *map );
 
+// Maximum number of maps enumerated by the maplist system
+#define MAX_SERVER_MAPS	1024
+#define MAP_BUF_SIZE	16384
+
+int compcstr( const void *a, const void *b );  // defined later in this file
+
+// Fills sortedOut[0..return_value-1] with pointers into mapBuf (caller provides both).
+// Strips .bsp extension, sorts alphabetically. Returns count (capped at maxMaps).
+static int G_GetSortedMapList( char *mapBuf, int mapBufSize, char **sortedOut, int maxMaps ) {
+	int numMaps, i, len;
+	char *p;
+	numMaps = trap->FS_GetFileList( "maps", ".bsp", mapBuf, mapBufSize );
+	if ( numMaps <= 0 ) return 0;
+	if ( numMaps > maxMaps ) numMaps = maxMaps;
+	p = mapBuf;
+	for ( i = 0; i < numMaps; i++ ) {
+		len = strlen( p );
+		if ( len > 4 && !Q_stricmp( p + len - 4, ".bsp" ) )
+			p[len-4] = '\0';
+		sortedOut[i] = p;
+		p += len + 1;
+	}
+	qsort( sortedOut, numMaps, sizeof( sortedOut[0] ), compcstr );
+	return numMaps;
+}
+
+// /maplist — prints a numbered list of all maps on the server.
+// Numbers match /callvote mapnum <n> and /callvote randommap.
 void Cmd_MapList_f( gentity_t *ent ) {
-	int i, toggle=0;
-	char map[24] = "--", buf[512] = {0};
+	static char  mapBuf[MAP_BUF_SIZE];
+	static char *sortedMaps[MAX_SERVER_MAPS];
+	int  numMaps, i;
+	char buf[512] = {0};
 
-	Q_strcat( buf, sizeof( buf ), "Map list:" );
-
-	for ( i=0; i<level.arenas.num; i++ ) {
-		Q_strncpyz( map, Info_ValueForKey( level.arenas.infos[i], "map" ), sizeof( map ) );
-		Q_StripColor( map );
-
-		if ( G_DoesMapSupportGametype( map, level.gametype ) || (g_tweakVote.integer & TV_IGNOREMAPARENAS) ) {  //ARGH?
-			char *tmpMsg = va( " ^%c%s", (++toggle&1) ? COLOR_GREEN : COLOR_YELLOW, map );
-			if ( strlen( buf ) + strlen( tmpMsg ) >= sizeof( buf ) ) {
-				trap->SendServerCommand( ent-g_entities, va( "print \"%s\"", buf ) );
-				buf[0] = '\0';
-			}
-			Q_strcat( buf, sizeof( buf ), tmpMsg );
-		}
+	numMaps = G_GetSortedMapList( mapBuf, sizeof(mapBuf), sortedMaps, MAX_SERVER_MAPS );
+	if ( !numMaps ) {
+		trap->SendServerCommand( ent-g_entities, "print \"No maps found on server.\n\"" );
+		return;
 	}
 
-	trap->SendServerCommand( ent-g_entities, va( "print \"%s\n\"", buf ) );
+	for ( i = 0; i < numMaps; i++ ) {
+		// Format: [n] mapname  — 4 entries per row
+		char *entry = va( "[^3%i^7] ^5%-26s", i, sortedMaps[i] );
+		if ( strlen(buf) + strlen(entry) + 2 >= sizeof(buf) ) {
+			trap->SendServerCommand( ent-g_entities, va( "print \"%s\"", buf ) );
+			buf[0] = '\0';
+		}
+		Q_strcat( buf, sizeof(buf), entry );
+		if ( (i+1) % 4 == 0 )
+			Q_strcat( buf, sizeof(buf), "\n" );
+	}
+	if ( buf[0] )
+		trap->SendServerCommand( ent-g_entities, va( "print \"%s\n\"", buf ) );
+
+	trap->SendServerCommand( ent-g_entities,
+		va( "print \"^5%i maps. Use ^3/callvote mapnum <n>^5 or ^3/callvote randommap\n\"", numMaps ) );
 }
 
 typedef struct mapname_s {
@@ -2917,11 +2980,7 @@ qboolean G_VoteMap( gentity_t *ent, int numArgs, const char *arg1, const char *a
 	}
 	trap->FS_Close( fp );
 
-	if ( !G_DoesMapSupportGametype( arg2, level.gametype ) && !(g_tweakVote.integer & TV_IGNOREMAPARENAS) ) { //new TV for check arena file for matching gametype?
-		//Logic, this is not needed because we have live update gametype?
-		trap->SendServerCommand( ent-g_entities, va( "print \"%s\n\"", G_GetStringEdString( "MP_SVGAME", "NOVOTE_MAPNOTSUPPORTEDBYGAME" ) ) );
-		return qfalse;
-	}
+	// No gametype check — race maps rarely have arena files, so DoesMapSupportGametype rejects everything.
 
 	// preserve the map rotation
 	trap->Cvar_VariableStringBuffer( "nextmap", s, sizeof( s ) );
@@ -2945,6 +3004,88 @@ qboolean G_VoteMap( gentity_t *ent, int numArgs, const char *arg1, const char *a
 	Com_sprintf( level.voteDisplayString, sizeof( level.voteDisplayString ), "map %s (%s)", mapName, mapName2 );
 	Q_strncpyz( level.voteStringClean, level.voteString, sizeof( level.voteStringClean ) );
 	return qtrue;
+}
+
+// Shared helper: validates mapName, builds voteString/voteDisplayString.
+// Used by G_VoteRandomMap and G_VoteMapNum so they share all validation with G_VoteMap.
+static qboolean G_VoteMapByName( gentity_t *ent, const char *mapName ) {
+	char s[MAX_CVAR_VALUE_STRING] = {0}, bspName[MAX_QPATH] = {0};
+	char *longName = NULL, *shortName = NULL;
+	const char *arenaInfo;
+	fileHandle_t fp = NULL_FILE;
+
+	Com_sprintf( bspName, sizeof(bspName), "maps/%s.bsp", mapName );
+	if ( trap->FS_Open( bspName, &fp, FS_READ ) <= 0 ) {
+		trap->SendServerCommand( ent-g_entities, va( "print \"Can't find map %s on server\n\"", bspName ) );
+		if ( fp != NULL_FILE ) trap->FS_Close( fp );
+		return qfalse;
+	}
+	trap->FS_Close( fp );
+
+	// No gametype check here — mapnum/randommap vote any .bsp on the server.
+	// Race maps rarely have arena files, so DoesMapSupportGametype would reject everything.
+
+	trap->Cvar_VariableStringBuffer( "nextmap", s, sizeof(s) );
+	if ( *s )
+		Com_sprintf( level.voteString, sizeof(level.voteString), "map %s; set nextmap \"%s\"", mapName, s );
+	else
+		Com_sprintf( level.voteString, sizeof(level.voteString), "map %s", mapName );
+
+	arenaInfo = G_GetArenaInfoByMap( mapName );
+	if ( arenaInfo ) {
+		longName  = Info_ValueForKey( arenaInfo, "longname" );
+		shortName = Info_ValueForKey( arenaInfo, "map" );
+	}
+	if ( !longName  || !longName[0]  ) longName  = (char *)mapName;
+	if ( !shortName || !shortName[0] ) shortName = (char *)mapName;
+
+	Com_sprintf( level.voteDisplayString, sizeof(level.voteDisplayString), "map %s (%s)", longName, shortName );
+	Q_strncpyz( level.voteStringClean, level.voteString, sizeof(level.voteStringClean) );
+	return qtrue;
+}
+
+// /callvote randommap — picks a random map from the server's full BSP list.
+qboolean G_VoteRandomMap( gentity_t *ent, int numArgs, const char *arg1, const char *arg2 ) {
+	static char  mapBuf[MAP_BUF_SIZE];
+	static char *sortedMaps[MAX_SERVER_MAPS];
+	int numMaps, idx;
+
+	numMaps = G_GetSortedMapList( mapBuf, sizeof(mapBuf), sortedMaps, MAX_SERVER_MAPS );
+	if ( !numMaps ) {
+		trap->SendServerCommand( ent-g_entities, "print \"No maps found on server.\n\"" );
+		return qfalse;
+	}
+
+	idx = (int)(rand() % numMaps);
+	trap->SendServerCommand( ent-g_entities,
+		va( "print \"Random map chosen: ^3%s^7 [%i/%i]\n\"", sortedMaps[idx], idx, numMaps-1 ) );
+	return G_VoteMapByName( ent, sortedMaps[idx] );
+}
+
+// /callvote mapnum <n> — votes for the map at index n from /maplist.
+qboolean G_VoteMapNum( gentity_t *ent, int numArgs, const char *arg1, const char *arg2 ) {
+	static char  mapBuf[MAP_BUF_SIZE];
+	static char *sortedMaps[MAX_SERVER_MAPS];
+	int numMaps, idx;
+
+	if ( numArgs < 3 ) {
+		Cmd_MapList_f( ent );
+		return qfalse;
+	}
+
+	idx     = atoi( arg2 );
+	numMaps = G_GetSortedMapList( mapBuf, sizeof(mapBuf), sortedMaps, MAX_SERVER_MAPS );
+	if ( !numMaps ) {
+		trap->SendServerCommand( ent-g_entities, "print \"No maps found on server.\n\"" );
+		return qfalse;
+	}
+	if ( idx < 0 || idx >= numMaps ) {
+		trap->SendServerCommand( ent-g_entities,
+			va( "print \"Invalid map number %i (valid: 0-%i). Use /maplist to see numbers.\n\"", idx, numMaps-1 ) );
+		return qfalse;
+	}
+
+	return G_VoteMapByName( ent, sortedMaps[idx] );
 }
 
 qboolean G_VoteMapRestart( gentity_t *ent, int numArgs, const char *arg1, const char *arg2 ) {
@@ -3101,6 +3242,9 @@ static voteString_t validVoteStrings[] = {
 	{	"poll",					"poll",				G_VotePoll,				1,		GTB_ALL,								qfalse,			"<poll question>" },
 	{	"pause",				"pause",			G_VotePause,			0,		GTB_ALL,								qfalse,			NULL },
 	{	"score_restart",		"NULL",				G_VoteReset,			0,		GTB_ALL,								qfalse,			NULL },
+	// mapnum / randommap — select map by number from /maplist (added alongside /maplist command)
+	{	"mapnum",				"mn",				G_VoteMapNum,			1,		GTB_ALL,								qtrue,			"<num>" },
+	{	"randommap",			"rmap randmap",		G_VoteRandomMap,		0,		GTB_ALL,								qtrue,			NULL },
 };
 static const int validVoteStringsSize = ARRAY_LEN( validVoteStrings );
 
@@ -3242,7 +3386,7 @@ void Cmd_CallVote_f( gentity_t *ent ) {
 		return;
 	}
 
-	if ((g_tweakVote.integer & TV_MAPCHANGELOCKOUT) && !Q_stricmp(arg1, "map") && (level.gametype == GT_FFA || g_raceMode.integer) && (level.startTime > (level.time - 1000*60*10))) { //Dont let a map vote be called within 10 mins of map load if we are in ffa
+	if ((g_tweakVote.integer & TV_MAPCHANGELOCKOUT) && (!Q_stricmp(arg1, "map") || !Q_stricmp(arg1, "mapnum") || !Q_stricmp(arg1, "randommap")) && (level.gametype == GT_FFA || g_raceMode.integer) && (level.startTime > (level.time - 1000*60*10))) { //Dont let a map vote be called within 10 mins of map load if we are in ffa
 		char timeStr[32];
 		//TimeToString( (1000*60*10 - (level.time - level.startTime)) , timeStr, sizeof(timeStr), qtrue);
 		TimeSecToString(((1000*60*10 - (level.time - level.startTime))*0.001f), timeStr, sizeof(timeStr));
@@ -6695,7 +6839,7 @@ static void Cmd_MovementStyle_f(gentity_t *ent)
 		return;
 
 	if (trap->Argc() != 2) {
-		trap->SendServerCommand( ent-g_entities, "print \"Usage: /move <siege, jka, qw, cpm, q3, pjk, wsw, rjq3, rjcpm, swoop, jetpack, speed, sp, slick, botcpm, coop, ocpm, tribes, or surf>.\n\"" );
+		trap->SendServerCommand( ent-g_entities, "print \"Usage: /move <siege, jka, qw, cpm, q3, pjk, wsw, rjq3, rjcpm, swoop, jetpack, speed, sp, slick, botcpm, coop, ocpm, tribes, surf, or quajk>.\n\"" );
 		return;
 	}
 
@@ -6727,6 +6871,11 @@ static void Cmd_MovementStyle_f(gentity_t *ent)
 
 	if (VectorLength(ent->client->ps.velocity) && !ent->client->ps.m_iVehicleNum) {
 		trap->SendServerCommand(ent-g_entities, "print \"You must be standing still to use this command!\n\"");
+		return;
+	}
+
+	if (ent->client->jetpackActivated) {
+		trap->SendServerCommand(ent-g_entities, "print \"Jetpack was used - use /resetspawn or /kill before switching styles.\n\"");
 		return;
 	}
 
@@ -6833,7 +6982,7 @@ static void Cmd_MovementStyle_f(gentity_t *ent)
 		ent->client->ps.weapon = WP_MELEE; //dont really understand this
 	}
 	else
-		trap->SendServerCommand( ent-g_entities, "print \"Usage: /move <siege, jka, qw, cpm, q3, pjk, wsw, rjq3, rjcpm, swoop, jetpack, speed, sp, slick, botcpm, or coop>.\n\"" );
+		trap->SendServerCommand( ent-g_entities, "print \"Usage: /move <siege, jka, qw, cpm, q3, pjk, wsw, rjq3, rjcpm, swoop, jetpack, speed, sp, slick, botcpm, coop, or quajk>.\n\"" );
 }
 
 void IntegerToRaceName(int style, char* styleString, size_t styleStringSize);
@@ -7256,6 +7405,122 @@ static void Cmd_Practice_f(gentity_t *ent)
 	}
 }
 
+//[JAPRO - Serverside - All - SavePos Function - Start]
+void Cmd_SavePos_f(gentity_t *ent)
+{
+	if (!ent->client)
+		return;
+
+	if (ent->client->sess.sessionTeam == TEAM_SPECTATOR) {
+		trap->SendServerCommand(ent - g_entities, "print \"You must be ingame to use /savepos.\n\"");
+		return;
+	}
+
+	VectorCopy(ent->client->ps.origin, ent->client->pers.savePosOrigin);
+	VectorCopy(ent->client->ps.viewangles, ent->client->pers.savePosAngles);
+	VectorCopy(ent->client->ps.velocity, ent->client->pers.savePosVelocity);
+	ent->client->pers.hasSavedPos = qtrue;
+
+	const float speed = sqrtf(
+		ent->client->ps.velocity[0] * ent->client->ps.velocity[0] +
+		ent->client->ps.velocity[1] * ent->client->ps.velocity[1]);
+	trap->SendServerCommand(ent - g_entities, va(
+		"print \"Position saved: ^3<%i, %i, %i>^7  speed: ^3%.0f\n\"",
+		(int)ent->client->pers.savePosOrigin[0],
+		(int)ent->client->pers.savePosOrigin[1],
+		(int)ent->client->pers.savePosOrigin[2],
+		speed));
+}
+//[JAPRO - Serverside - All - SavePos Function - End]
+
+//[JAPRO - Serverside - All - RestorePos Function - Start]
+void Cmd_RestorePos_f(gentity_t *ent)
+{
+	if (!ent->client)
+		return;
+
+	if (ent->client->sess.sessionTeam == TEAM_SPECTATOR) {
+		trap->SendServerCommand(ent - g_entities, "print \"You must be ingame to use /respos.\n\"");
+		return;
+	}
+
+	if (!ent->client->pers.hasSavedPos) {
+		trap->SendServerCommand(ent - g_entities, "print \"No position saved — use /savepos first.\n\"");
+		return;
+	}
+
+	const qboolean inRace     = (qboolean)(ent->client->sess.raceMode != 0);
+	const qboolean inPractice = ent->client->pers.practice;
+
+	if (inRace && !inPractice) {
+		// Competitive race: behave like /amtele (resets timer), but restore saved velocity
+		AmTeleportPlayer(ent, ent->client->pers.savePosOrigin, ent->client->pers.savePosAngles,
+			qfalse, qtrue, qfalse);
+		VectorCopy(ent->client->pers.savePosVelocity, ent->client->ps.velocity);
+		// Block start trigger until explicit /amtele — same behaviour as after /noclip.
+		// AmTeleportPlayer clears noclipUsed; we set it back so the player can't
+		// accidentally fire the start timer by landing on it after a respos.
+		ent->client->noclipUsed = qtrue;
+		trap->SendServerCommand(ent - g_entities, "print \"Position restored (timer reset).\n\"");
+	} else {
+		// Practice mode or non-race: raw teleport that preserves saved velocity
+		// (no timer reset so practice runs stay uninterrupted)
+		const qboolean wasNoClip = ent->client->noclip;
+		ent->client->noclip = qtrue;
+
+		trap->UnlinkEntity((sharedEntity_t *)ent);
+
+		VectorCopy(ent->client->pers.savePosOrigin,  ent->client->ps.origin);
+		VectorCopy(ent->client->pers.savePosVelocity, ent->client->ps.velocity);
+
+		// flip EF_TELEPORT_BIT so the client skips lerp on the next frame
+		ent->client->ps.eFlags ^= EF_TELEPORT_BIT;
+
+		SetClientViewAngle(ent, ent->client->pers.savePosAngles);
+
+		BG_PlayerStateToEntityState(&ent->client->ps, &ent->s, qtrue);
+		VectorCopy(ent->client->ps.origin, ent->r.currentOrigin);
+
+		if (ent->client->sess.sessionTeam != TEAM_SPECTATOR)
+			trap->LinkEntity((sharedEntity_t *)ent);
+
+		if (!wasNoClip)
+			ent->client->noclip = qfalse;
+
+		// Block start trigger in race mode (noclipUsed check ignores practice, so harmless there)
+		if (inRace)
+			ent->client->noclipUsed = qtrue;
+
+		const float speed = sqrtf(
+			ent->client->pers.savePosVelocity[0] * ent->client->pers.savePosVelocity[0] +
+			ent->client->pers.savePosVelocity[1] * ent->client->pers.savePosVelocity[1]);
+		trap->SendServerCommand(ent - g_entities, va(
+			"print \"Position restored (speed: ^3%.0f^7).\n\"", speed));
+	}
+}
+//[JAPRO - Serverside - All - RestorePos Function - End]
+
+static void Cmd_ResetSpawn_f(gentity_t *ent) {
+	if (!ent->client)
+		return;
+	if (!ent->client->sess.raceMode) {
+		trap->SendServerCommand(ent - g_entities, "print \"You must be in racemode to use /resetspawn.\n\"");
+		return;
+	}
+
+	// Clear the amtelemark so /kill and /amtele fall back to the map spawn
+	VectorClear(ent->client->pers.telemarkOrigin);
+	ent->client->pers.telemarkAngle = 0.0f;
+	ent->client->pers.telemarkPitchAngle = 0.0f;
+
+	// Clear saved race-spawn and jetpack lock
+	VectorClear(ent->client->pers.savedSpawnOrigin);
+	ent->client->pers.savedSpawnAngle = 0.0f;
+	ent->client->jetpackActivated = qfalse;
+
+	trap->SendServerCommand(ent - g_entities, "print \"Spawn marker cleared. /kill or /amtele will now use map spawn.\n\"");
+}
+
 //[JAPRO - Serverside - All - Amtelemark Function - Start]
 void Cmd_Amtelemark_f(gentity_t *ent)
 {
@@ -7280,6 +7545,16 @@ void Cmd_Amtelemark_f(gentity_t *ent)
 		}
 		*/
 
+		if (ent->client->sess.raceMode && !ent->client->pers.practice &&
+			(ent->client->pers.stats.startTime || ent->client->pers.stats.startTimeFlag)) {
+			trap->SendServerCommand(ent - g_entities, "cp \"^3Cannot set telemark while timer is running.\n\"");
+			return;
+		}
+		if (ent->client->sess.raceMode && !ent->client->pers.practice && ent->client->noclipUsed) {
+			trap->SendServerCommand(ent - g_entities, "cp \"^1Error: your race state is invalidated.\n^7Please /kill or /amtele to reset.\n\"");
+			return;
+		}
+
 		if ((ent->client->ps.stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_ALLOWTELES) && ent->client->sess.sessionTeam != TEAM_SPECTATOR) {
 			if (ent->client->ps.groundEntityNum == ENTITYNUM_NONE || ent->client->ps.velocity[2] != 0) { //so they can't accidentally teleport midair
 				trap->SendServerCommand(ent - g_entities, "print \"You must be on the ground to telemark midrun!\n\"");
@@ -7297,6 +7572,15 @@ void Cmd_Amtelemark_f(gentity_t *ent)
 			(int)ent->client->pers.telemarkOrigin[0], (int)ent->client->pers.telemarkOrigin[1], (int)ent->client->pers.telemarkOrigin[2], (int)ent->client->pers.telemarkAngle, (int)ent->client->pers.telemarkPitchAngle ));
 }
 //[JAPRO - Serverside - All - Amtelemark Function - End]
+
+static void Cmd_AmtelemarkReset_f(gentity_t *ent) {
+	if (!ent->client)
+		return;
+	VectorClear(ent->client->pers.telemarkOrigin);
+	ent->client->pers.telemarkAngle = 0.0f;
+	ent->client->pers.telemarkPitchAngle = 0.0f;
+	trap->SendServerCommand(ent - g_entities, "print \"Telemark cleared.\n\"");
+}
 
 void Cmd_RaceTele_f(gentity_t *ent, qboolean useForce)
 {
@@ -8829,6 +9113,7 @@ void Cmd_ACLogout_f( gentity_t *ent );
 void Cmd_ACRegister_f( gentity_t *ent );
 void Cmd_ACWhois_f( gentity_t *ent );
 void Cmd_DFRecent_f( gentity_t *ent );
+void Cmd_RaceLatest_f( gentity_t *ent );
 void Cmd_DFFind_f( gentity_t *ent );
 void Cmd_DFHardest_f( gentity_t *ent );
 void Cmd_DFTop10_f( gentity_t *ent );
@@ -8919,6 +9204,7 @@ command_t commands[] = {
 	{ "amtaunt2",			Cmd_EmoteTaunt2_f,			CMD_NOINTERMISSION|CMD_ALIVE },//EMOTE
 	{ "amtele",				Cmd_Amtele_f,				CMD_NOINTERMISSION },
 	{ "amtelemark",			Cmd_Amtelemark_f,			CMD_NOINTERMISSION },
+	{ "amtelemarkreset",	Cmd_AmtelemarkReset_f,		CMD_NOINTERMISSION },
 	{ "amvictory",			Cmd_EmoteVictory_f,			CMD_NOINTERMISSION|CMD_ALIVE },//EMOTE
 	{ "amvstr",				Cmd_Amvstr_f,				CMD_NOINTERMISSION },
 
@@ -8990,6 +9276,8 @@ command_t commands[] = {
 	{ "killother",			Cmd_KillOther_f,			CMD_CHEAT|CMD_ALIVE },
 //	{ "kylesmash",			TryGrapple,					0 },
 
+	{ "latest",				Cmd_RaceLatest_f,			CMD_NOINTERMISSION },
+
 	{ "launch",				Cmd_Launch_f,				CMD_NOINTERMISSION|CMD_ALIVE},
 
 	{ "levelshot",			Cmd_LevelShot_f,			CMD_CHEAT|CMD_ALIVE|CMD_NOINTERMISSION },
@@ -8998,6 +9286,7 @@ command_t commands[] = {
 	{ "logout",				Cmd_ACLogout_f,				CMD_NOINTERMISSION },
 
 	{ "mapents",			Cmd_MapEnts_f,				CMD_CHEAT|CMD_NOINTERMISSION },
+	{ "maplist",			Cmd_MapList_f,				0 },
 
 	{ "master",				Cmd_AddMaster_f,			CMD_NOINTERMISSION },
 	{ "masterList",			Cmd_ListMasters_f,			CMD_NOINTERMISSION },
@@ -9036,8 +9325,13 @@ command_t commands[] = {
 	{ "rtop",				Cmd_DFTop10_f,				CMD_NOINTERMISSION },
 	{ "rworst",				Cmd_DFTodo_f,				CMD_NOINTERMISSION },
 
+	{ "respos",				Cmd_RestorePos_f,			CMD_NOINTERMISSION },
+	{ "resetspawn",			Cmd_ResetSpawn_f,			CMD_NOINTERMISSION },
+
 	{ "saber",				Cmd_Saber_f,				CMD_NOINTERMISSION },
+	{ "savepos",			Cmd_SavePos_f,				CMD_NOINTERMISSION },
 	{ "say",				Cmd_Say_f,					0 },
+	{ "say_cross",			Cmd_SayCross_f,				0 },
 	{ "say_team",			Cmd_SayTeam_f,				0 },
 	{ "say_team_mod",		Cmd_SayTeamMod_f,			0 },
 	{ "score",				Cmd_Score_f,				0 },

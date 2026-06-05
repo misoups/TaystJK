@@ -479,7 +479,8 @@ static void FillCloudySkySide( const int mins[2], const int maxs[2], qboolean ad
 
 			if ( tess.numVertexes >= SHADER_MAX_VERTEXES )
 			{
-				Com_Error( ERR_DROP, "SHADER_MAX_VERTEXES hit in FillCloudySkySide()\n" );
+				ri.Printf( PRINT_WARNING, "WARNING: SHADER_MAX_VERTEXES hit in FillCloudySkySide() -- sky clipped\n" );
+				return;
 			}
 		}
 	}

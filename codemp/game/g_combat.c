@@ -2184,6 +2184,25 @@ extern void saberBackToOwner(gentity_t *saberent);
 #if _GRAPPLE
 void Weapon_HookFree (gentity_t *ent);
 #endif
+// Race-mode death handler: teleport to amtelemark or map spawn instead of dying.
+// Called from player_die for environmental deaths and reused by Cmd_Kill_f.
+extern void AmTeleportPlayer( gentity_t *player, vec3_t origin, vec3_t angles, qboolean droptofloor, qboolean race, qboolean toMark );
+extern gentity_t *SelectSpawnPoint( vec3_t avoidPoint, vec3_t origin, vec3_t angles, team_t team, qboolean isbot );
+void RaceMode_TeleportOnDeath( gentity_t *self ) {
+	if ( VectorLength(self->client->pers.telemarkOrigin) ) {
+		vec3_t angles = {0, 0, 0};
+		angles[YAW]   = self->client->pers.telemarkAngle;
+		angles[PITCH] = self->client->pers.telemarkPitchAngle;
+		AmTeleportPlayer( self, self->client->pers.telemarkOrigin, angles, qtrue, qtrue, qtrue );
+	} else {
+		vec3_t spawn_origin, spawn_angles;
+		SelectSpawnPoint( self->client->ps.origin, spawn_origin, spawn_angles, TEAM_FREE, qfalse );
+		AmTeleportPlayer( self, spawn_origin, spawn_angles, qtrue, qtrue, qfalse );
+	}
+	self->health = self->client->ps.stats[STAT_HEALTH] = self->client->ps.stats[STAT_MAX_HEALTH] = 100;
+	self->client->jetpackActivated = qfalse;
+}
+
 void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int damage, int meansOfDeath ) {
 	gentity_t	*ent;
 	int			anim;
@@ -2199,6 +2218,14 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 	}
 
 	if ( level.intermissiontime ) {
+		return;
+	}
+
+	// Race mode: intercept all deaths and teleport instead of dying.
+	// PvP damage is already blocked by the G_Damage racemode guard, so in
+	// practice only map triggers, fall damage, and explicit kills reach here.
+	if ( self->client->sess.raceMode && meansOfDeath != MOD_TEAM_CHANGE ) {
+		RaceMode_TeleportOnDeath( self );
 		return;
 	}
 

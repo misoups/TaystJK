@@ -31,7 +31,8 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 //
 
 // surface geometry should not exceed these limits
-#define	SHADER_MAX_VERTEXES	1000
+// Raised from 1000 to 4096 to handle complex multi-stage sky shaders and large surfaces
+#define	SHADER_MAX_VERTEXES	4096
 #define	SHADER_MAX_INDEXES	(6*SHADER_MAX_VERTEXES)
 
 

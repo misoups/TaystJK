@@ -2821,7 +2821,12 @@ void BG_TouchJumpPad( playerState_t *ps, entityState_t *jumppad ) {
 	ps->jumppad_ent = jumppad->number;
 	ps->jumppad_frame = ps->pmove_framecount;
 	// give the player the velocity from the jumppad
-	VectorCopy( jumppad->origin2, ps->velocity );
+	if ( jumppad->saberInFlight ) {
+		// trigger_push_velocity: preserve XY momentum, only set Z
+		ps->velocity[2] = jumppad->origin2[2];
+	} else {
+		VectorCopy( jumppad->origin2, ps->velocity );
+	}
 	// fix: no more force draining after bouncing the jumppad
 	ps->fd.forcePowersActive &= ~(1<<FP_LEVITATION);
 }

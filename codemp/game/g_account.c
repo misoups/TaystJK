@@ -88,9 +88,15 @@ typedef struct PlayerID_s {
 
 void getDateTime(int time, char * timeStr, size_t timeStrSize) {
 	time_t	timeGMT;
-	//time -= 60*60*5; //EST timezone -5? 
+	//time -= 60*60*5; //EST timezone -5?
 	timeGMT = (time_t)time;
 	strftime( timeStr, timeStrSize, "%m/%d/%y %I:%M %p", localtime( &timeGMT ) );
+}
+
+// ISO-style: "2026-05-31 04:19:41"
+static void getDateTimeISO(int t, char *out, size_t outSize) {
+	time_t tt = (time_t)t;
+	strftime(out, outSize, "%Y-%m-%d %H:%M:%S", localtime(&tt));
 }
 
 unsigned int ip_to_int (const char * ip) {
@@ -1032,6 +1038,7 @@ void IntegerToRaceName(int style, char *styleString, size_t styleStringSize) {
 		case 16: Q_strncpyz(styleString, "ocpm", styleStringSize); break;
 		case 17: Q_strncpyz(styleString, "tribes", styleStringSize); break;
 		case 18: Q_strncpyz(styleString, "surf", styleStringSize); break;
+		case 19: Q_strncpyz(styleString, "quajk", styleStringSize); break;
 		default: Q_strncpyz(styleString, "ERROR", styleStringSize); break;
 	}
 }
@@ -1058,6 +1065,57 @@ void CleanupLocalRun() { //This should never actually change anything since we i
 	CALL_SQLITE (close(db));
 
 	//DebugWriteToDB("CleanupLocalRun");
+}
+
+void G_LoadCheckpointPBs(const char *username, const char *mapname, int courseid, int style, int bestTimes[32]) {
+	sqlite3 *db;
+	const char *sql;
+	sqlite3_stmt *stmt;
+	int s;
+
+	CALL_SQLITE(open(LOCAL_DB_PATH, &db));
+	sql = "SELECT checkpoint_index, duration_ms FROM LocalCheckpointPB WHERE username = ? AND mapname = ? AND courseid = ? AND style = ?";
+	CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+	CALL_SQLITE(bind_text(stmt, 1, username, -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_text(stmt, 2, mapname, -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_int(stmt, 3, courseid));
+	CALL_SQLITE(bind_int(stmt, 4, style));
+
+	while ((s = sqlite3_step(stmt)) == SQLITE_ROW) {
+		int cpIdx = sqlite3_column_int(stmt, 0);
+		int ms = sqlite3_column_int(stmt, 1);
+		if (cpIdx >= 0 && cpIdx < 32)
+			bestTimes[cpIdx] = ms;
+	}
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Select Failed (G_LoadCheckpointPBs)", s);
+
+	CALL_SQLITE(finalize(stmt));
+	CALL_SQLITE(close(db));
+}
+
+void G_SaveCheckpointPB(const char *username, const char *mapname, int courseid, int cpIdx, int style, int duration_ms) {
+	sqlite3 *db;
+	const char *sql;
+	sqlite3_stmt *stmt;
+	int s;
+
+	CALL_SQLITE(open(LOCAL_DB_PATH, &db));
+	sql = "INSERT OR REPLACE INTO LocalCheckpointPB (username, mapname, courseid, checkpoint_index, style, duration_ms) VALUES (?, ?, ?, ?, ?, ?)";
+	CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+	CALL_SQLITE(bind_text(stmt, 1, username, -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_text(stmt, 2, mapname, -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_int(stmt, 3, courseid));
+	CALL_SQLITE(bind_int(stmt, 4, cpIdx));
+	CALL_SQLITE(bind_int(stmt, 5, style));
+	CALL_SQLITE(bind_int(stmt, 6, duration_ms));
+
+	s = sqlite3_step(stmt);
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Insert Failed (G_SaveCheckpointPB)", s);
+
+	CALL_SQLITE(finalize(stmt));
+	CALL_SQLITE(close(db));
 }
 
 #if 0
@@ -1803,6 +1861,30 @@ void SV_RebuildUnlocks_f(void) {
 }
 
 void StripWhitespace(char *s);
+
+void G_LogRun(const char *username, const char *playername, const char *coursename, int style, int duration_ms) {
+	sqlite3 *db;
+	char *sql;
+	sqlite3_stmt *stmt;
+	int s;
+	time_t rawtime;
+	time(&rawtime);
+	CALL_SQLITE(open(LOCAL_DB_PATH, &db));
+	sql = "INSERT INTO LocalRunLog (username, playername, coursename, style, duration_ms, end_time) VALUES (?, ?, ?, ?, ?, ?)";
+	CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+	CALL_SQLITE(bind_text(stmt, 1, username, -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_text(stmt, 2, playername, -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_text(stmt, 3, coursename, -1, SQLITE_STATIC));
+	CALL_SQLITE(bind_int(stmt, 4, style));
+	CALL_SQLITE(bind_int(stmt, 5, duration_ms));
+	CALL_SQLITE(bind_int(stmt, 6, (int)rawtime));
+	s = sqlite3_step(stmt);
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Insert Failed (G_LogRun)", s);
+	CALL_SQLITE(finalize(stmt));
+	CALL_SQLITE(close(db));
+}
+
 void G_AddRaceTime(char *username, char *message, int duration_ms, int style, int topspeed, int average, int clientNum, int awesomenoise, int worldrecordnoise) {//should be short.. but have to change elsewhere? is it worth it?
 	time_t	rawtime;
 	char	string[1024] = {0}, info[1024] = {0}, coursename[40], timeStr[32] = {0}, styleString[32] = {0};
@@ -1843,6 +1925,13 @@ void G_AddRaceTime(char *username, char *message, int duration_ms, int style, in
 
 	if (level.raceLog)
 		trap->FS_Write(string, strlen(string), level.raceLog); //Always write to text file races.log
+
+	{
+		char netname[MAX_NETNAME] = {0};
+		Q_strncpyz(netname, cl->pers.netname, sizeof(netname));
+		Q_StripColor(netname);
+		G_LogRun(username, netname, coursename, style, duration_ms);
+	}
 
 	CALL_SQLITE(open(LOCAL_DB_PATH, &db));
 
@@ -2091,6 +2180,36 @@ void G_AddRaceTime(char *username, char *message, int duration_ms, int style, in
 
 	TimeToString((int)(duration_ms), timeStr, sizeof(timeStr));
 	PrintRaceTime(username, cl->pers.netname, message, styleString, topspeed, average, timeStr, clientNum, season_newRank, seasonPB, global_newRank, qtrue, qtrue, season_oldRank, global_oldRank, addedScore, awesomenoise, worldrecordnoise);
+
+	if (globalPB) {
+		// Build the same string PrintRaceTime broadcasts, for the cross-server feed
+		char csAward[32] = {0};
+		char csMsg[512] = {0};
+
+		if (global_newRank == 1)
+			Q_strncpyz(csAward, "^5(WR)", sizeof(csAward));
+		else if (season_newRank == 1 && global_newRank > 0)
+			Q_strncpyz(csAward, "^5(SR+PB)", sizeof(csAward));
+		else if (season_newRank == 1)
+			Q_strncpyz(csAward, "^5(SR)", sizeof(csAward));
+		else if (global_newRank > 0)
+			Q_strncpyz(csAward, "^5(PB)", sizeof(csAward));
+
+		if (global_newRank > 0) {
+			if (global_newRank != global_oldRank) {
+				if (global_oldRank > 0)
+					Q_strcat(csAward, sizeof(csAward), va(" (%i->%i +%.1f)", global_oldRank, global_newRank, addedScore));
+				else
+					Q_strcat(csAward, sizeof(csAward), va(" (%i +%.1f)", global_newRank, addedScore));
+			}
+		}
+
+		Com_sprintf(csMsg, sizeof(csMsg),
+			"^5Completed in ^3%-12s^5 max:^3%-10i^5 avg:^3%-10i^5 style:^3%-10s^5 by ^3%s %s^7",
+			timeStr, topspeed, average, styleString, username, csAward);
+
+		G_CrossServerBroadcast("run", "", csMsg);
+	}
 	//DebugWriteToDB("G_AddRaceTime");
 }
 
@@ -5074,6 +5193,8 @@ int RaceNameToInteger(char *style) {
 		return 17;
 	if (!Q_stricmp(style, "surf"))
 		return 18;
+	if (!Q_stricmp(style, "quajk"))
+		return 19;
 	return -1;
 }
 
@@ -5795,6 +5916,205 @@ void Cmd_DFTopRank_f(gentity_t *ent) { //Add season support?
 }
 #endif
 
+//[JAPRO - Serverside - All - latest command start]
+#define LATESTLOG_BASE \
+	"SELECT l.username, l.playername, l.coursename, l.style, " \
+	"MIN(l.duration_ms), MAX(l.end_time), " \
+	"COALESCE(MAX(r.rank), 0), COALESCE(MAX(r.entries), 0) " \
+	"FROM LocalRunLog l " \
+	"LEFT JOIN LocalRun r ON (l.username != '' AND r.username = l.username AND r.coursename = l.coursename AND r.style = l.style AND r.invalid = 0 AND r.rank > 0)"
+#define LATESTLOG_GROUPBY " GROUP BY l.username, l.coursename, l.style"
+#define LATESTLOG_END LATESTLOG_GROUPBY " ORDER BY MAX(l.end_time) DESC LIMIT ?,10"
+
+void Cmd_RaceLatest_f(gentity_t *ent) {
+	char inputString[MAX_NETNAME], styleString[32], timeStr[32], dateStr[32];
+	int i, input, args = trap->Argc();
+	int style = -1, page = -1, start;
+	qboolean mine = qfalse, unlogged = qfalse;
+	char userSearch[MAX_NETNAME] = {0};
+	char *sql;
+	sqlite3 *db;
+	sqlite3_stmt *stmt;
+	int s;
+	char buf[MAX_STRING_CHARS] = {0};
+	qboolean foundOne = qfalse;
+
+	for (i = 1; i < args; i++) {
+		trap->Argv(i, inputString, sizeof(inputString));
+		if (!Q_stricmp(inputString, "mine")) {
+			mine = qtrue;
+			continue;
+		}
+		if (!Q_stricmp(inputString, "unlogged")) {
+			unlogged = qtrue;
+			continue;
+		}
+		if (style == -1) {
+			input = RaceNameToInteger(inputString);
+			if (input != -1) {
+				style = input;
+				continue;
+			}
+		}
+		if (page == -1) {
+			input = atoi(inputString);
+			if (input > 0) {
+				page = input;
+				continue;
+			}
+		}
+		if (!userSearch[0])
+			Q_strncpyz(userSearch, inputString, sizeof(userSearch));
+	}
+
+	if (mine && !ent->client->pers.userName[0]) {
+		trap->SendServerCommand(ent-g_entities, "print \"You must be logged in to use /latest mine.\n\"");
+		return;
+	}
+
+	if (page < 1)
+		page = 1;
+	if (page > 1000)
+		page = 1000;
+	start = (page - 1) * 10;
+
+	CALL_SQLITE(open(LOCAL_DB_PATH, &db));
+
+	if (mine) {
+		if (style != -1) {
+			sql = LATESTLOG_BASE " WHERE l.username = ? AND l.style = ?" LATESTLOG_END;
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_text(stmt, 1, ent->client->pers.userName, -1, SQLITE_STATIC));
+			CALL_SQLITE(bind_int(stmt, 2, style));
+			CALL_SQLITE(bind_int(stmt, 3, start));
+		} else {
+			sql = LATESTLOG_BASE " WHERE l.username = ?" LATESTLOG_END;
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_text(stmt, 1, ent->client->pers.userName, -1, SQLITE_STATIC));
+			CALL_SQLITE(bind_int(stmt, 2, start));
+		}
+	} else if (unlogged) {
+		if (style != -1) {
+			sql = LATESTLOG_BASE " WHERE l.username = '' AND l.style = ?" LATESTLOG_END;
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_int(stmt, 1, style));
+			CALL_SQLITE(bind_int(stmt, 2, start));
+		} else {
+			sql = LATESTLOG_BASE " WHERE l.username = ''" LATESTLOG_END;
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_int(stmt, 1, start));
+		}
+	} else if (userSearch[0]) {
+		char searchPattern[MAX_NETNAME + 2];
+		Com_sprintf(searchPattern, sizeof(searchPattern), "%%%s%%", userSearch);
+		if (style != -1) {
+			sql = LATESTLOG_BASE " WHERE l.username LIKE ? AND l.style = ?" LATESTLOG_END;
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_text(stmt, 1, searchPattern, -1, SQLITE_TRANSIENT));
+			CALL_SQLITE(bind_int(stmt, 2, style));
+			CALL_SQLITE(bind_int(stmt, 3, start));
+		} else {
+			sql = LATESTLOG_BASE " WHERE l.username LIKE ?" LATESTLOG_END;
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_text(stmt, 1, searchPattern, -1, SQLITE_TRANSIENT));
+			CALL_SQLITE(bind_int(stmt, 2, start));
+		}
+	} else {
+		if (style != -1) {
+			sql = LATESTLOG_BASE " WHERE l.style = ?" LATESTLOG_END;
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_int(stmt, 1, style));
+			CALL_SQLITE(bind_int(stmt, 2, start));
+		} else {
+			sql = LATESTLOG_BASE LATESTLOG_END;
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_int(stmt, 1, start));
+		}
+	}
+
+	// Build title line
+	{
+		char title[128] = {0};
+		if (style != -1) {
+			IntegerToRaceName(style, styleString, sizeof(styleString));
+			if (mine)         Com_sprintf(title, sizeof(title), "^3Latest runs (yours, %s):", styleString);
+			else if (unlogged) Com_sprintf(title, sizeof(title), "^3Latest unlogged runs (%s):", styleString);
+			else if (userSearch[0]) Com_sprintf(title, sizeof(title), "^3Latest runs for '%s' (%s):", userSearch, styleString);
+			else              Com_sprintf(title, sizeof(title), "^3Latest runs (%s):", styleString);
+		} else {
+			if (mine)         Q_strncpyz(title, "^3Latest runs (yours):", sizeof(title));
+			else if (unlogged) Q_strncpyz(title, "^3Latest unlogged runs:", sizeof(title));
+			else if (userSearch[0]) Com_sprintf(title, sizeof(title), "^3Latest runs for '%s':", userSearch);
+			else              Q_strncpyz(title, "^3Latest runs:", sizeof(title));
+		}
+		Q_strncpyz(buf, va("%s\n^5%-8s %-16s %-21s %-5s %-12s %s\n",
+			title,
+			"STYLE", "USERNAME", "DATE", "RANK", "TIME", "MAP/COURSE"),
+			sizeof(buf));
+	}
+
+	while (1) {
+		s = sqlite3_step(stmt);
+		if (s == SQLITE_ROW) {
+			const char *username   = (const char*)sqlite3_column_text(stmt, 0);
+			const char *playername = (const char*)sqlite3_column_text(stmt, 1);
+			const char *coursename = (const char*)sqlite3_column_text(stmt, 2);
+			int rstyle             = sqlite3_column_int(stmt, 3);
+			int duration_ms        = sqlite3_column_int(stmt, 4);
+			int end_time           = sqlite3_column_int(stmt, 5);
+			int rank               = sqlite3_column_int(stmt, 6);
+			const char *displayName;
+			char rStyleStr[16], rankStr[8], isoDate[22];
+			char *lineMsg;
+
+			foundOne = qtrue;
+			TimeToString(duration_ms, timeStr, sizeof(timeStr));
+			getDateTimeISO(end_time, isoDate, sizeof(isoDate));
+			IntegerToRaceName(rstyle, rStyleStr, sizeof(rStyleStr));
+
+			displayName = (username && username[0]) ? username : (playername ? playername : "?");
+
+			if (rank > 0)
+				Com_sprintf(rankStr, sizeof(rankStr), "#%i", rank);
+			else
+				Q_strncpyz(rankStr, "-", sizeof(rankStr));
+
+			// rank #1 = green, others = white
+			lineMsg = va("^5%-8s ^7%-16s ^7%-21s %s%-5s ^2%-12s ^5%s\n",
+				rStyleStr,
+				displayName,
+				isoDate,
+				rank == 1 ? "^2" : "^7",
+				rankStr,
+				timeStr,
+				coursename ? coursename : "?");
+
+			if (strlen(buf) + strlen(lineMsg) >= sizeof(buf)) {
+				trap->SendServerCommand(ent-g_entities, va("print \"%s\"", buf));
+				buf[0] = '\0';
+			}
+			Q_strcat(buf, sizeof(buf), lineMsg);
+		} else if (s == SQLITE_DONE) {
+			break;
+		} else {
+			G_ErrorPrint("ERROR: SQL Select Failed (Cmd_RaceLatest_f)", s);
+			break;
+		}
+	}
+
+	CALL_SQLITE(finalize(stmt));
+	CALL_SQLITE(close(db));
+
+	if (!foundOne)
+		Q_strcat(buf, sizeof(buf), "^7No entries found.\n");
+
+	trap->SendServerCommand(ent-g_entities, va("print \"%s\"", buf));
+}
+#undef LATESTLOG_BASE
+#undef LATESTLOG_GROUPBY
+#undef LATESTLOG_END
+//[JAPRO - Serverside - All - latest command end]
+
 void Cmd_DFHardest_f(gentity_t *ent) {
 	int style = -1, page = -1, start = 0, input, i;
 	char inputString[16], inputStyleString[16];
@@ -6243,11 +6563,6 @@ void Cmd_DFTop10_f(gentity_t *ent) {
 	const int args = trap->Argc();
 	qboolean enteredCourseName = qtrue;
 
-	if (args > 5) {
-		trap->SendServerCommand(ent-g_entities, "print \"Usage: /rTop <course (if needed)> <style (optional)> <season (optional - example: s1)> <page (optional)>.  This displays the top10 for the specified course.\n\"");
-		return;
-	}
-
 	//Get mapname.
 	//How to tell if mapname is specified -- If its a map with only 1 course, we have to check. Otherwise we can assume 1st arg is mapname.
 		//It will always be the first arg.
@@ -6325,8 +6640,7 @@ void Cmd_DFTop10_f(gentity_t *ent) {
 
 	Q_strlwr(partialCourseName);
 	Q_CleanStr(partialCourseName);
-	Q_strstrip(partialCourseName, " ", "");
-	Q_strstrip(partialCourseName, "&", " ");
+	Q_strstrip(partialCourseName, "&", " "); // allow & as space substitute
 
 	Com_Printf("Partial coursename is %s\n", partialCourseName);
 
@@ -6352,29 +6666,77 @@ void Cmd_DFTop10_f(gentity_t *ent) {
 
 		CALL_SQLITE (open (LOCAL_DB_PATH, & db));
 
-		if (enteredCourseName) { //Course e
-			//sql = "SELECT DISTINCT(coursename) FROM LocalRun WHERE instr(replace(coursename, ' ', ''), ?) > 0 ORDER BY entries DESC LIMIT 1";
-			sql = "SELECT DISTINCT(coursename) FROM LocalRun WHERE instr(coursename, ?) > 0 ORDER BY entries DESC LIMIT 1";
-			CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
-			CALL_SQLITE (bind_text (stmt, 1, partialCourseName, -1, SQLITE_STATIC));
-			s = sqlite3_step(stmt);
-			if (s == SQLITE_ROW) {
-				//Check if it actually has text, if not return.  then we can use cheaper (MAX) entries query above //loda fixme
-				Q_strncpyz(fullCourseName, (char*)sqlite3_column_text(stmt, 0), sizeof(fullCourseName));
+		if (enteredCourseName) {
+			int matchCount = 0;
+			char firstMatch[40] = {0};
+			// Prefer starts-with matches; fall back to contains if none found
+			sql = "SELECT DISTINCT coursename FROM LocalRun WHERE coursename LIKE ? || '%' ORDER BY entries DESC";
+			CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+			CALL_SQLITE(bind_text(stmt, 1, partialCourseName, -1, SQLITE_STATIC));
+			while (1) {
+				s = sqlite3_step(stmt);
+				if (s == SQLITE_ROW) {
+					matchCount++;
+					if (matchCount == 1)
+						Q_strncpyz(firstMatch, (const char*)sqlite3_column_text(stmt, 0), sizeof(firstMatch));
+				} else if (s == SQLITE_DONE) {
+					break;
+				} else {
+					G_ErrorPrint("ERROR: SQL Select Failed (Cmd_DFTop10_f match)", s);
+					break;
+				}
 			}
-			else if (s == SQLITE_DONE) {
-				//Com_Printf("fail 4\n");
-				trap->SendServerCommand(ent-g_entities, "print \"Usage: /rTop <course (if needed)> <style (optional)> <season (optional - example: s1)> <page (optional)>.  This displays highscores for the specified course.\n\"");
-				CALL_SQLITE (finalize(stmt));
-				CALL_SQLITE (close(db));
-				return;
-			}
-			else {
-				G_ErrorPrint("ERROR: SQL Select Failed (Cmd_DFTop10_f)", s);
-				return;
-			}
-			CALL_SQLITE (finalize(stmt));
+			CALL_SQLITE(finalize(stmt));
 
+			if (matchCount == 0) {
+				// Fall back to contains search
+				sql = "SELECT DISTINCT coursename FROM LocalRun WHERE instr(coursename, ?) > 0 ORDER BY entries DESC";
+				CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+				CALL_SQLITE(bind_text(stmt, 1, partialCourseName, -1, SQLITE_STATIC));
+				while (1) {
+					s = sqlite3_step(stmt);
+					if (s == SQLITE_ROW) {
+						matchCount++;
+						if (matchCount == 1)
+							Q_strncpyz(firstMatch, (const char*)sqlite3_column_text(stmt, 0), sizeof(firstMatch));
+					} else if (s == SQLITE_DONE) {
+						break;
+					} else {
+						G_ErrorPrint("ERROR: SQL Select Failed (Cmd_DFTop10_f contains)", s);
+						break;
+					}
+				}
+				CALL_SQLITE(finalize(stmt));
+			}
+
+			if (matchCount == 0) {
+				trap->SendServerCommand(ent-g_entities, va("print \"^1No times found for: ^3%s\n\"", partialCourseName));
+				CALL_SQLITE(close(db));
+				return;
+			} else if (matchCount == 1) {
+				Q_strncpyz(fullCourseName, firstMatch, sizeof(fullCourseName));
+			} else {
+				// Multiple matches — list them and let the user be more specific
+				trap->SendServerCommand(ent-g_entities, va("print \"^3Multiple courses match '^5%s^3'. Be more specific:\n\"", partialCourseName));
+				sql = "SELECT DISTINCT coursename FROM LocalRun WHERE coursename LIKE ? || '%' ORDER BY entries DESC";
+				CALL_SQLITE(prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL));
+				CALL_SQLITE(bind_text(stmt, 1, partialCourseName, -1, SQLITE_STATIC));
+				i = 1;
+				while (1) {
+					s = sqlite3_step(stmt);
+					if (s == SQLITE_ROW) {
+						trap->SendServerCommand(ent-g_entities, va("print \"  ^5%i ^7- ^3%s\n\"", i, (const char*)sqlite3_column_text(stmt, 0)));
+						i++;
+					} else if (s == SQLITE_DONE) {
+						break;
+					} else {
+						break;
+					}
+				}
+				CALL_SQLITE(finalize(stmt));
+				CALL_SQLITE(close(db));
+				return;
+			}
 		}
 
 		//Problem - crossmap query can return multiple records for same person since the cleanup cmd is only done on mapchange, 
@@ -7270,6 +7632,9 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 
 	CALL_SQLITE (open (LOCAL_DB_PATH, & db));
 
+	// Enable WAL mode so both servers sharing the same DB file don't block each other
+	sqlite3_exec(db, "PRAGMA journal_mode=WAL;", NULL, NULL, NULL);
+
 	//sqlite_exec(db, "VACUUM;", 0, 0);
 	//index LocalRun on RANK
 	//use transactions
@@ -7318,6 +7683,20 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 	s = sqlite3_step(stmt);
 	if (s != SQLITE_DONE)
 		G_ErrorPrint("ERROR: SQL Create Failed (InitGameAccountStuff 5)", s);
+	CALL_SQLITE (finalize(stmt));
+
+	sql = "CREATE TABLE IF NOT EXISTS LocalCheckpointPB(username VARCHAR(16), mapname VARCHAR(40), courseid INTEGER, checkpoint_index INTEGER, style INTEGER, duration_ms INTEGER, PRIMARY KEY(username, mapname, courseid, checkpoint_index, style))";
+	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+	s = sqlite3_step(stmt);
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Create Failed (InitGameAccountStuff LocalCheckpointPB)", s);
+	CALL_SQLITE (finalize(stmt));
+
+	sql = "CREATE TABLE IF NOT EXISTS LocalRunLog(id INTEGER PRIMARY KEY, username VARCHAR(16) DEFAULT '', playername VARCHAR(36) NOT NULL DEFAULT '', coursename VARCHAR(40) NOT NULL, style UNSIGNED TINYINT NOT NULL, duration_ms UNSIGNED INTEGER NOT NULL, end_time UNSIGNED INTEGER NOT NULL)";
+	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+	s = sqlite3_step(stmt);
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Create Failed (InitGameAccountStuff LocalRunLog)", s);
 	CALL_SQLITE (finalize(stmt));
 
 #if _ELORANKING

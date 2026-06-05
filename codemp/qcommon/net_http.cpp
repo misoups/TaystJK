@@ -256,7 +256,7 @@ int NET_HTTP_StartServer(int port) {
 		return port;
 	} else {
 		mg_mgr_free(&srv.mgr);
-		Com_Error(ERR_DROP, "HTTP Downloads: webserver startup failed.");
+		Com_Printf("HTTP Downloads: webserver startup failed (port busy). Continuing without HTTP downloads.\n");
 		return 0;
 	}
 }

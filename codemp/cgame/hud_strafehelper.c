@@ -107,6 +107,7 @@ float DF_GetAirStrafeAccelerate() {
 		case MV_WSW:
 		case MV_RJCPM:
 		case MV_BOTCPM:
+		case MV_QUAJK:
 			airStrafeAccelerate = pm_cpm_airstrafeaccelerate;
 			break;
 		case MV_SLICK:
@@ -132,6 +133,7 @@ float DF_GetAirStopAccelerate() {
 		case MV_SLICK:
 		case MV_RJCPM:
 		case MV_BOTCPM:
+		case MV_QUAJK:
 			airStopAccelerate = pm_cpm_airstopaccelerate;
 			break;
 		default:
@@ -151,6 +153,7 @@ float DF_GetAirStrafeWishspeed() {
 		case MV_SLICK:
 		case MV_RJCPM:
 		case MV_BOTCPM:
+		case MV_QUAJK:
 			airStrafeWishSpeed = pm_cpm_airstrafewishspeed;
 			break;
 		default:
@@ -259,6 +262,7 @@ void DF_DrawStrafeHUD(centity_t* cent)
 		{
 			DF_StrafeHelper();
 		}
+
 	}
 
 	if (cg_snapHud.integer) {
@@ -1842,6 +1846,7 @@ japro - Draw the speedometer
 	const float accel = currentSpeed - lastSpeed;
     lastSpeed = currentSpeed;
 
+	// Speed-based color: disabled by SPEEDOMETER_COLORS
 	if (currentSpeed > state.cgaz.s && !(cg_speedometer.integer & SPEEDOMETER_COLORS))
 	{
 		const float currentSpeedColor = 1 / (currentSpeed / state.cgaz.s * (currentSpeed / state.cgaz.s));
@@ -1867,42 +1872,65 @@ japro - Draw the speedometer
 	}
 	const float avgAccel = total / (float) ACCEL_SAMPLES - 0.0625f;//fucking why does it offset by this number
 
-	if (avgAccel > 0.0f)
+	// SPEEDOMETER_NOUNIT: hide unit prefix entirely
+	// SPEEDOMETER_COLORS: suppress accel string color (force white)
+	if (cg_speedometer.integer & SPEEDOMETER_NOUNIT)
 	{
-		accelStr = S_COLOR_GREEN "\xb5:";
+		accelStr  = "";
+		accelStr2 = "";
+		accelStr3 = "";
+	}
+	else if (cg_speedometer.integer & SPEEDOMETER_COLORS)
+	{
+		// colors disabled — always white regardless of accel direction
+		accelStr  = S_COLOR_WHITE "\xb5:";
+		accelStr2 = S_COLOR_WHITE "k:";
+		accelStr3 = S_COLOR_WHITE "m: ";
+	}
+	else if (avgAccel > 0.0f)
+	{
+		accelStr  = S_COLOR_GREEN "\xb5:";
 		accelStr2 = S_COLOR_GREEN "k:";
 		accelStr3 = S_COLOR_GREEN "m: ";
 	}
 	else if (avgAccel < 0.0f)
 	{
-		accelStr = S_COLOR_RED "\xb5:";
+		accelStr  = S_COLOR_RED "\xb5:";
 		accelStr2 = S_COLOR_RED "k:";
 		accelStr3 = S_COLOR_RED "m: ";
 	}
 	else
 	{
-		accelStr = S_COLOR_WHITE "\xb5:";
+		accelStr  = S_COLOR_WHITE "\xb5:";
 		accelStr2 = S_COLOR_WHITE "k:";
 		accelStr3 = S_COLOR_WHITE "m: ";
 	}
 
-	if (!(cg_speedometer.integer & SPEEDOMETER_KPH) && !(cg_speedometer.integer & SPEEDOMETER_MPH))
+	// cg_speedometerSpeedAlign: offset X so the speed number aligns differently.
+	// 0.0 = left-aligned (default), 0.5 = centered, 1.0 = right-aligned.
 	{
-		Com_sprintf(speedStr, sizeof(speedStr), "   %.0f", state.speedometer.speed);
-		CG_Text_Paint(speedometerXPos * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-		CG_Text_Paint(speedometerXPos * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr, 0.0f, 0, ITEM_ALIGN_LEFT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-	}
-	else if (cg_speedometer.integer & SPEEDOMETER_KPH)
-	{
-		Com_sprintf(speedStr2, sizeof(speedStr2), "   %.0f", state.speedometer.speed);
-		CG_Text_Paint(speedometerXPos * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr2, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-		CG_Text_Paint(speedometerXPos * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr2, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-	}
-	else if (cg_speedometer.integer & SPEEDOMETER_MPH)
-	{
-		Com_sprintf(speedStr3, sizeof(speedStr3), "   %.0f", state.speedometer.speed);
-		CG_Text_Paint(speedometerXPos * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr3, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-		CG_Text_Paint(speedometerXPos * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr3, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+		float xOffset = 0;
+		if (cg_speedometerSpeedAlign.value != 0.0f)
+			xOffset = -cg_speedometerSpeedAlign.value * CG_Text_Width(va("%.0f", currentSpeed), cg_speedometerSize.value, FONT_NONE);
+
+		if (!(cg_speedometer.integer & SPEEDOMETER_KPH) && !(cg_speedometer.integer & SPEEDOMETER_MPH))
+		{
+			Com_sprintf(speedStr, sizeof(speedStr), "   %.0f", state.speedometer.speed);
+			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr, 0.0f, 0, ITEM_ALIGN_LEFT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+		}
+		else if (cg_speedometer.integer & SPEEDOMETER_KPH)
+		{
+			Com_sprintf(speedStr2, sizeof(speedStr2), "   %.0f", state.speedometer.speed);
+			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr2, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr2, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+		}
+		else if (cg_speedometer.integer & SPEEDOMETER_MPH)
+		{
+			Com_sprintf(speedStr3, sizeof(speedStr3), "   %.0f", state.speedometer.speed);
+			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr3, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr3, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+		}
 	}
 	speedometerXPos += 52;
 

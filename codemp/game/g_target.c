@@ -496,7 +496,7 @@ void target_teleporter_use( gentity_t *self, gentity_t *other, gentity_t *activa
 	}
 
 	if (self->spawnflags & 1)
-		speed = sqrt(other->client->ps.velocity[0] * other->client->ps.velocity[0] + other->client->ps.velocity[1] * other->client->ps.velocity[1]);
+		speed = sqrt(activator->client->ps.velocity[0] * activator->client->ps.velocity[0] + activator->client->ps.velocity[1] * activator->client->ps.velocity[1]);
 	else if (self->speed)
 		speed = self->speed;
 
@@ -582,7 +582,7 @@ Kills the activator.
 */
 void target_kill_use( gentity_t *self, gentity_t *other, gentity_t *activator ) {
 	G_ActivateBehavior(self,BSET_USE);
-	G_Damage ( activator, NULL, NULL, NULL, NULL, 100000, DAMAGE_NO_PROTECTION, MOD_TELEFRAG);
+	G_Kill( activator );
 }
 
 void SP_target_kill( gentity_t *self ) {

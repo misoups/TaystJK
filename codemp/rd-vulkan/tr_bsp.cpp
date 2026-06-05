@@ -23,7 +23,6 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 // tr_map.c
 
 #include "tr_local.h"
-#include "tr_cache.h"
 
 static const imgFlags_t lightmapFlags = IMGFLAG_NOLIGHTSCALE | IMGFLAG_NO_COMPRESSION | IMGFLAG_LIGHTMAP | IMGFLAG_NOSCALE | IMGFLAG_CLAMPTOEDGE;
 
@@ -732,6 +731,10 @@ static void ParseMesh ( const dsurface_t *ds, const mapVert_t *verts, msurface_t
 
 	width = LittleLong( ds->patchWidth );
 	height = LittleLong( ds->patchHeight );
+
+	if ( width < 0 || width > MAX_PATCH_SIZE || height < 0 || height > MAX_PATCH_SIZE ) {
+		ri.Error( ERR_DROP, "ParseMesh: bad size (%d x %d)", width, height );
+	}
 
 	verts += LittleLong( ds->firstVert );
 	numPoints = width * height;
@@ -1737,9 +1740,14 @@ static	void R_LoadSubmodels( const lump_t *l, world_t &worldData, int index ) {
 			out->bounds[0][j] = LittleFloat (in->mins[j]);
 			out->bounds[1][j] = LittleFloat (in->maxs[j]);
 		}
+/*
+Ghoul2 Insert Start
+*/
 
-		CModelCache->InsertModelHandle(model->name, model->index);
-
+		RE_InsertModelIntoHash(model->name, model);
+/*
+Ghoul2 Insert End
+*/
 		out->firstSurface = worldData.surfaces + LittleLong( in->firstSurface );
 		out->numSurfaces = LittleLong( in->numSurfaces );
 	}
@@ -2258,8 +2266,6 @@ static void R_LoadEntities( const lump_t *l, world_t &worldData ) {
 		}
  		if (!Q_stricmp(keyname, "distanceCull")) {
 			sscanf(value, "%f", &tr.distanceCull );
-			if (r_distanceCull && r_distanceCull->value)
-				tr.distanceCull = r_distanceCull->value;
 			continue;
 		}
 		// check for a different grid size
@@ -2279,6 +2285,11 @@ static void R_LoadEntities( const lump_t *l, world_t &worldData ) {
 	}
 	//both default to 1 so no harm if not present.
 	VectorScale( tr.sunAmbient, ambient, tr.sunAmbient);
+
+	// Allow r_distanceCull to override the map's distancecull value (or the default).
+	// Setting r_distanceCull to 0 disables distance culling entirely (matches jk2mv behaviour).
+	if (r_distanceCull && r_distanceCull->value > 0.0f)
+		tr.distanceCull = r_distanceCull->value;
 }
 
 /*

@@ -1126,7 +1126,7 @@ static bitInfo_T strafeTweaks[] = {
     {"SD"},//17
     {"Small Lines"},//18
     {"Max"},//19
-    {"Accel Zones"} //20
+    {"Accel Zones"}, //20
 };
 static const int MAX_STRAFEHELPER_TWEAKS = ARRAY_LEN( strafeTweaks );
 
@@ -1518,11 +1518,12 @@ static bitInfo_T speedometerSettings[] = { // MAX_WEAPON_TWEAKS tweaks (24)
 	{ "Display speed in kilometers instead of units" },//8
 	{ "Display speed in imperial miles instead of units" },//9
     { "Pre-speed jumps array" },//10
-    { "Disable speedometer colors"},//11
+    { "No speed-based color" },//11
     { "Array Colors 1" },//12
     { "Array Colors 2" },//13
     { "Old Speedgraph" },//14
-	{ "XYZ Speed" }//15
+	{ "XYZ Speed" },//15
+	{ "No unit display" },//16
 };
 static const int MAX_SPEEDOMETER_SETTINGS = ARRAY_LEN(speedometerSettings);
 
@@ -2701,6 +2702,7 @@ static const char *gcmds[] = {
 	"rTop",
 	"rRank",
 	"rLatest",
+	"latest",
 	"rWorst",
 	"rPopular",
 	"rFind",

@@ -190,6 +190,11 @@ static	void R_LoadLightmaps( lump_t *l, const char *psMapName, world_t &worldDat
 
 	// create all the lightmaps
 	tr.numLightmaps = len / (LIGHTMAP_SIZE * LIGHTMAP_SIZE * 3);
+	if ( tr.numLightmaps > MAX_LIGHTMAPS ) {
+		ri.Printf( PRINT_WARNING, "WARNING: R_LoadLightmaps: %d lightmaps exceeds MAX_LIGHTMAPS (%d), clamping\n",
+			tr.numLightmaps, MAX_LIGHTMAPS );
+		tr.numLightmaps = MAX_LIGHTMAPS;
+	}
 	if ( tr.numLightmaps == 1 ) {
 		//FIXME: HACK: maps with only one lightmap turn up fullbright for some reason.
 		//this avoids this, but isn't the correct solution.
@@ -470,6 +475,10 @@ static void ParseMesh ( dsurface_t *ds, mapVert_t *verts, msurface_t *surf, worl
 
 	width = LittleLong( ds->patchWidth );
 	height = LittleLong( ds->patchHeight );
+
+	if ( width < 0 || width > MAX_PATCH_SIZE || height < 0 || height > MAX_PATCH_SIZE ) {
+		ri.Error( ERR_DROP, "ParseMesh: bad size (%d x %d)", width, height );
+	}
 
 	verts += LittleLong( ds->firstVert );
 	numPoints = width * height;
@@ -1955,8 +1964,6 @@ void R_LoadEntities( lump_t *l, world_t &worldData ) {
 		}
  		if (!Q_stricmp(keyname, "distanceCull")) {
 			sscanf(value, "%f", &tr.distanceCull );
-			if (r_distanceCull && r_distanceCull->value)
-				tr.distanceCull = r_distanceCull->value;
 			continue;
 		}
 		// check for a different grid size
@@ -1976,6 +1983,11 @@ void R_LoadEntities( lump_t *l, world_t &worldData ) {
 	}
 	//both default to 1 so no harm if not present.
 	VectorScale( tr.sunAmbient, ambient, tr.sunAmbient);
+
+	// Allow r_distanceCull to override the map's distancecull value (or the default).
+	// Setting r_distanceCull to 0 disables distance culling entirely (matches jk2mv behaviour).
+	if (r_distanceCull && r_distanceCull->value > 0.0f)
+		tr.distanceCull = r_distanceCull->value;
 }
 
 /*

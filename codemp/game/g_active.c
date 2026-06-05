@@ -1711,6 +1711,73 @@ void SpectatorThink( gentity_t *ent, usercmd_t *ucmd ) {
 
 /*
 =================
+ClientAutoSpecTimer
+
+If g_autoSpec is set, sends idle players to spectator after that many seconds.
+Players actively running a race are warned but not specced mid-run.
+Returns qfalse if the client was moved to spec.
+=================
+*/
+static qboolean ClientAutoSpecTimer( gentity_t *ent ) {
+	gclient_t *client = ent->client;
+	int        timeoutMs, afkMs, secsLeft;
+
+	if ( !g_autoSpec.integer )
+		return qtrue;
+	if ( client->sess.sessionTeam == TEAM_SPECTATOR )
+		return qtrue;
+	if ( ent->r.svFlags & SVF_BOT )
+		return qtrue;
+	if ( level.intermissiontime )
+		return qtrue;
+	if ( level.numPlayingClients <= 1 )
+		return qtrue;
+
+	timeoutMs = g_autoSpec.integer * 1000;
+	afkMs     = level.time - client->lastHereTime;
+
+	if ( afkMs < timeoutMs )
+	{
+		client->autoSpecWarnedSec = 0;
+		return qtrue;
+	}
+
+	// Player is AFK — don't spec mid-run, but still warn
+	if ( client->sess.raceMode && client->pers.stats.startTime ) {
+		secsLeft = 0; // overdue — show persistent warning
+		if ( client->autoSpecWarnedSec != -1 ) {
+			client->autoSpecWarnedSec = -1;
+			trap->SendServerCommand( ent - g_entities,
+				"cp \"^1AFK - will be moved to spec after your run ends\n\"" );
+		}
+		return qtrue;
+	}
+
+	// Countdown warning in the last 10 seconds (once per second)
+	secsLeft = ( timeoutMs - afkMs ) / 1000;
+	if ( secsLeft < 0 ) secsLeft = 0;
+	if ( secsLeft <= 10 && client->autoSpecWarnedSec != secsLeft ) {
+		client->autoSpecWarnedSec = secsLeft;
+		if ( secsLeft > 0 )
+			trap->SendServerCommand( ent - g_entities,
+				va( "cp \"^1AFK - moving to spec in %d second%s\n\"",
+				    secsLeft, secsLeft == 1 ? "" : "s" ) );
+	}
+
+	if ( afkMs >= timeoutMs ) {
+		G_LogPrintf( "AutoSpec: moving %s to spectator (AFK %ds)\n",
+		             client->pers.netname, afkMs / 1000 );
+		trap->SendServerCommand( -1,
+			va( "print \"^3%s ^3moved to spec (AFK).\n\"", client->pers.netname ) );
+		SetTeam( ent, "s", qfalse );
+		return qfalse;
+	}
+
+	return qtrue;
+}
+
+/*
+=================
 ClientInactivityTimer
 
 Returns qfalse if the client is dropped
@@ -3783,10 +3850,21 @@ void ClientThink_real( gentity_t *ent ) {
 	else if (pmove_fixed.integer || client->pers.pmoveFixed)
 		ucmd->serverTime = ((ucmd->serverTime + pmove_msec.integer-1) / pmove_msec.integer) * pmove_msec.integer;
 
-	if ((client->sess.sessionTeam != TEAM_SPECTATOR) && !client->ps.stats[STAT_RACEMODE] && ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_TRIBES)) { //Ok,, this should be like every frame, right??
+	if ((client->sess.sessionTeam != TEAM_SPECTATOR) && !client->ps.stats[STAT_RACEMODE] && ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_QUAJK)) { //Ok,, this should be like every frame, right??
 		client->sess.movementStyle = g_movementStyle.integer;
 	}
-	client->ps.stats[STAT_MOVEMENTSTYLE] = client->sess.movementStyle;
+
+	// Non-TaystJK clients cannot predict custom physics — force them to vanilla JKA movement
+	// so their bg_pmove prediction matches the server and animations don't diverge/jitter.
+	if (!client->pers.isJAPRO && client->ps.stats[STAT_RACEMODE]) {
+		client->sess.movementStyle = MV_JKA;
+		client->sess.raceMode = qfalse;
+		client->ps.stats[STAT_RACEMODE] = 0;
+	}
+	if (!client->pers.isJAPRO)
+		client->ps.stats[STAT_MOVEMENTSTYLE] = MV_JKA;
+	else
+		client->ps.stats[STAT_MOVEMENTSTYLE] = client->sess.movementStyle;
 
 	if ((g_neutralFlag.integer < 4) && client->ps.powerups[PW_NEUTRALFLAG]) {
 		if (client->ps.fd.forcePowerLevel[FP_LEVITATION] > 1) {
@@ -3885,7 +3963,7 @@ void ClientThink_real( gentity_t *ent ) {
 		else {
 			client->ps.ammo[AMMO_POWERCELL] = 300;
 
-			if (movementStyle == MV_SIEGE || movementStyle == MV_JKA || movementStyle == MV_QW || movementStyle == MV_PJK || movementStyle == MV_SP || movementStyle == MV_SPEED || movementStyle == MV_JETPACK) {
+			if (movementStyle == MV_SIEGE || movementStyle == MV_JKA || movementStyle == MV_QW || movementStyle == MV_PJK || movementStyle == MV_SP || movementStyle == MV_SPEED || movementStyle == MV_JETPACK || movementStyle == MV_QUAJK) {
 				ent->client->ps.stats[STAT_WEAPONS] = (1 << WP_MELEE) + (1 << WP_SABER) + (1 << WP_DISRUPTOR) + (1 << WP_STUN_BATON);
 			}
 			else {
@@ -3896,12 +3974,22 @@ void ClientThink_real( gentity_t *ent ) {
 		if (movementStyle == MV_JETPACK || movementStyle == MV_TRIBES) //always give jetpack style a jetpack, and non jetpack styles no jetpack, maybe this should just be in clientspawn ?
 			ent->client->ps.stats[STAT_HOLDABLE_ITEMS] |= (1 << HI_JETPACK);
 		else
-			ent->client->ps.stats[STAT_HOLDABLE_ITEMS] &= ~(1 << HI_JETPACK); 
+			ent->client->ps.stats[STAT_HOLDABLE_ITEMS] &= ~(1 << HI_JETPACK);
 	}
 
+	// Track jetpack activation: once the jetpack fires in MV_JETPACK, lock the movement style
+	// until /resetspawn or /kill (ClientSpawn clears the flag via memset).
+	if (!ent->client->jetpackActivated &&
+		client->sess.movementStyle == MV_JETPACK &&
+		(ent->client->ps.eFlags & EF_JETPACK_ACTIVE)) {
+		ent->client->jetpackActivated = qtrue;
+	}
 
 	if (ent->s.eType != ET_NPC)
 	{
+		if ( !ClientAutoSpecTimer( ent ) ) {
+			return;
+		}
 		// check for inactivity timer, but never drop the local client of a non-dedicated server
 		if ( !ClientInactivityTimer( client ) ) {
 			return;
@@ -4019,6 +4107,7 @@ void ClientThink_real( gentity_t *ent ) {
 				client->ps.pm_type = PM_JETPACK; //terrible to set this here where it cant be predicted?
 				client->ps.eFlags |= EF_JETPACK_ACTIVE;
 				killJetFlags = qfalse;
+				// Note: noclipUsed invalidation for HI_JETPACK item is handled after Pmove
 			}
 
 //JAPRO - Serverside - jetpack - Effects - Start - Do this in pmove now..
@@ -4273,11 +4362,11 @@ void ClientThink_real( gentity_t *ent ) {
 		client->ps.speed = g_speed.value;
 		if (client->sess.raceMode || client->ps.stats[STAT_RACEMODE])
 			client->ps.speed = 250.0f;
-		if (client->ps.stats[STAT_MOVEMENTSTYLE] == MV_QW || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_CPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_OCPM  || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_Q3 || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_WSW || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_RJQ3 || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_RJCPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_BOTCPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_TRIBES) {//qw is 320 too
-			if (client->sess.movementStyle == MV_QW || client->sess.movementStyle == MV_CPM || client->sess.movementStyle == MV_OCPM || client->sess.movementStyle == MV_Q3 || client->sess.movementStyle == MV_WSW || client->sess.movementStyle == MV_RJQ3 || client->sess.movementStyle == MV_RJCPM || client->sess.movementStyle == MV_BOTCPM || client->sess.movementStyle == MV_TRIBES) {  //loda double check idk...
+		if (client->ps.stats[STAT_MOVEMENTSTYLE] == MV_QW || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_CPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_OCPM  || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_Q3 || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_WSW || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_RJQ3 || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_RJCPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_BOTCPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_TRIBES || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_QUAJK) {//qw is 320 too
+			if (client->sess.movementStyle == MV_QW || client->sess.movementStyle == MV_CPM || client->sess.movementStyle == MV_OCPM || client->sess.movementStyle == MV_Q3 || client->sess.movementStyle == MV_WSW || client->sess.movementStyle == MV_RJQ3 || client->sess.movementStyle == MV_RJCPM || client->sess.movementStyle == MV_BOTCPM || client->sess.movementStyle == MV_TRIBES || client->sess.movementStyle == MV_QUAJK) {  //loda double check idk...
 				client->ps.speed *= 1.28f;//bring it up to 320 on g_speed 250 for vq3/wsw physics mode
-				if (client->pers.haste)
-					client->ps.speed *= 1.3f;
+				if ((client->pers.haste || g_mapHaste.integer) && client->ps.stats[STAT_MOVEMENTSTYLE] != MV_QUAJK)
+					client->ps.speed *= 1.3f; // haste: ~416 ups for CPM/OCPM on haste maps
 			}
 		}
 		else if (client->ps.stats[STAT_MOVEMENTSTYLE] == MV_SPEED && client->sess.movementStyle == MV_SPEED) {
@@ -5144,6 +5233,19 @@ void ClientThink_real( gentity_t *ent ) {
 	}
 
 	Pmove (&pmove);
+
+	// Invalidate race run if MV_JETPACK thrust was used before the start timer.
+	// pm_type is PM_JETPACK while the player is actively thrusting (set by pmove).
+	// client->jetPackOn handles the HI_JETPACK item path; this branch catches /move jetpack.
+	if (ent->client->ps.pm_type == PM_JETPACK &&
+	    ent->client->sess.movementStyle == MV_JETPACK &&
+	    ent->client->sess.raceMode && !ent->client->pers.practice &&
+	    !ent->client->pers.stats.startTime && !ent->client->pers.stats.startTimeFlag &&
+	    !ent->client->noclipUsed) {
+		ent->client->noclipUsed = qtrue;
+		trap->SendServerCommand(ent - g_entities,
+			"print \"^3Jetpack used before start timer \xe2\x80\x94 run invalidated. Use /amtele or /kill to reset.\n\"");
+	}
 
 	if (ent->client->solidHack)
 	{

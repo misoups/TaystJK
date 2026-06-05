@@ -272,7 +272,12 @@ void SP_trigger_asteroid_field(gentity_t *self);
 void SP_trigger_timer_start(gentity_t *self);//JAPRO Timers
 void SP_trigger_timer_checkpoint(gentity_t *self);
 void SP_trigger_timer_stop(gentity_t *self);
+void SP_target_df_husk(gentity_t *self); // Q3 defrag/Twi marker entity (no-op, converted at map load)
+void G_ConvertQ3DefragTimers(void);      // converts Q3 defrag and Twi timer formats to df_trigger_*
+void SP_target_speed(gentity_t *self);   // Q3 defrag XY speed normalizer pad
 void SP_trigger_newpush (gentity_t *ent);
+void SP_trigger_push_velocity (gentity_t *ent); // mvsdk/defrag arc jumppad
+void SP_item_haste (gentity_t *ent);            // Q3 defrag haste pickup
 void SP_trigger_KOTH (gentity_t *ent);//JAPRO koth
 
 void SP_target_remove_powerups( gentity_t *ent );
@@ -560,6 +565,7 @@ spawn_t	spawns[] = {
 	{ "info_siege_objective",			qfalse,		SP_info_siege_objective },
 	{ "info_siege_radaricon",			qfalse,		SP_info_siege_radaricon },
 	{ "item_botroam",					qtrue,		SP_item_botroam },
+	{ "item_haste",						qfalse,		SP_item_haste }, // Q3 defrag haste pickup → sets pers.haste (qfalse: needs world presence for touch)
 	{ "light",							qfalse,		SP_light },
 	{ "misc_ammo_floor_unit",			qfalse,		SP_misc_ammo_floor_unit },
 	{ "misc_bsp",						qfalse,	SP_misc_bsp },
@@ -662,6 +668,7 @@ spawn_t	spawns[] = {
 	{ "ref_tag_huge",					qtrue,	SP_reference_tag },
 	{ "shooter_blaster",				qfalse,	SP_shooter_blaster },
 	{ "target_activate",				qtrue,	SP_target_activate },
+	{ "target_checkpoint",				qtrue,	SP_target_df_husk }, // Q3 defrag checkpoint marker
 	{ "target_counter",					qtrue,	SP_target_counter },
 	{ "target_deactivate",				qtrue,	SP_target_deactivate },
 	{ "target_delay",					qtrue,	SP_target_delay },
@@ -687,6 +694,9 @@ spawn_t	spawns[] = {
 	{ "target_scriptrunner",			qfalse,	SP_target_scriptrunner },
 	{ "target_siege_end",				qfalse,	SP_target_siege_end },
 	{ "target_speaker",					qfalse,	SP_target_speaker },
+	{ "target_speed",					qtrue,	SP_target_speed }, // Q3 defrag XY speed normalizer pad
+	{ "target_startTimer",				qtrue,	SP_target_df_husk }, // Q3 defrag start timer marker
+	{ "target_stopTimer",				qtrue,	SP_target_df_husk }, // Q3 defrag finish timer marker
 	{ "target_teleporter",				qtrue,	SP_target_teleporter },
 	{ "team_CTF_blueplayer",			qtrue,	SP_team_CTF_blueplayer },
 	{ "team_CTF_bluespawn",				qtrue,	SP_team_CTF_bluespawn },
@@ -707,9 +717,11 @@ spawn_t	spawns[] = {
 
 	{ "trigger_once",					qfalse,	SP_trigger_once },
 	{ "trigger_push",					qfalse,	SP_trigger_push },
+	{ "trigger_push_velocity",			qfalse,	SP_trigger_push_velocity }, // mvsdk/defrag arc jumppad
 	{ "trigger_shipboundary",			qfalse,	SP_trigger_shipboundary },
 	{ "trigger_space",					qfalse,	SP_trigger_space },
 	{ "trigger_teleport",				qfalse,	SP_trigger_teleport },
+	{ "Twi_timer",						qfalse,	SP_target_df_husk }, // Twi mod timer trigger (brush entity)
 	{ "waypoint",						qtrue,	SP_waypoint },
 	{ "waypoint_navgoal",				qtrue,	SP_waypoint_navgoal },
 	{ "waypoint_navgoal_1",				qtrue,	SP_waypoint_navgoal_1 },
@@ -1701,6 +1713,7 @@ void G_SpawnEntitiesFromString( qboolean inSubBSP ) {
 
 	if (!inSubBSP)
 	{
+		G_ConvertQ3DefragTimers(); // add Q3 defrag and Twi timer format support
 		level.spawning = qfalse;			// any future calls to G_Spawn*() will be errors
 	}
 

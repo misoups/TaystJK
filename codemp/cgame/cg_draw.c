@@ -2217,8 +2217,8 @@ void CG_DrawHUD(centity_t	*cent)
 							{
 								if (cg_drawScore.integer > 1 && cgs.gametype >= GT_TEAM && cgs.gametype != GT_SIEGE) {
 									CG_DrawScaledProportionalString(
-											SCREEN_WIDTH - (SCREEN_WIDTH - focusItem->window.rect.x - cg_drawScoreX.value) * cgs.widthRatioCoef,
-											focusItem->window.rect.y - cg_drawScoreY.value - 14,
+											SCREEN_WIDTH - (SCREEN_WIDTH - focusItem->window.rect.x) * cgs.widthRatioCoef,
+											focusItem->window.rect.y - 14,
 											scoreStr,
 											UI_RIGHT | UI_DROPSHADOW,
 											focusItem->window.foreColor,
@@ -2226,8 +2226,8 @@ void CG_DrawHUD(centity_t	*cent)
 								}
 								else {
 									CG_DrawScaledProportionalString(
-											SCREEN_WIDTH - (SCREEN_WIDTH - focusItem->window.rect.x - cg_drawScoreX.value) * cgs.widthRatioCoef,
-											focusItem->window.rect.y - cg_drawScoreY.value,
+											SCREEN_WIDTH - (SCREEN_WIDTH - focusItem->window.rect.x) * cgs.widthRatioCoef,
+											focusItem->window.rect.y,
 											scoreStr,
 											UI_RIGHT|UI_DROPSHADOW,
 											focusItem->window.foreColor,
@@ -9600,6 +9600,7 @@ void IntegerToRaceName(int style, char *styleString, size_t styleStringSize)
 		case MV_OCPM:		Q_strncpyz(styleString, "ocpm", styleStringSize);		break;
 		case MV_TRIBES:		Q_strncpyz(styleString, "tribes", styleStringSize);		break;
 		case MV_SURF:		Q_strncpyz(styleString, "surf", styleStringSize);		break;
+		case MV_QUAJK:		Q_strncpyz(styleString, "quajk", styleStringSize);		break;
 		default:			Q_strncpyz(styleString, "ERROR", styleStringSize);		return;
 	}
 

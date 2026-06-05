@@ -490,7 +490,6 @@ void vk_initialize( void )
 	ri.Printf( PRINT_ALL, "\nVK_MAX_TEXTURE_SIZE: %d\n", glConfig.maxTextureSize );
 	ri.Printf( PRINT_ALL, "VK_MAX_TEXTURE_UNITS: %d\n", glConfig.maxActiveTextures );
 
-	R_InitImageScratch();
 	vk_initTextureCompression();
 
 	vk.xscale2D = glConfig.vidWidth * ( 1.0 / 640.0 );
@@ -651,15 +650,14 @@ void vk_shutdown( void )
 	vk_clean_staging_buffer();
 
 	vk_release_geometry_buffers();
-	vk_release_indirect_buffers();
 
 	vk_destroy_samplers();
 
     vk_destroy_sync_primitives();
    
 	// storage buffer
-	VK_DESTROY_BUFFER(vk.device, vk.storage.buffer);
-	VK_FREE_MEMORY(vk.device, vk.storage.memory);
+	qvkDestroyBuffer(vk.device, vk.storage.buffer, NULL);
+	qvkFreeMemory(vk.device, vk.storage.memory, NULL);
 
 #ifdef USE_VBO_SS
 	vk_clean_surface_sprites();
@@ -667,15 +665,10 @@ void vk_shutdown( void )
 
     vk_destroy_shader_modules();
 
-	R_DestroyImageScratch();
-
 __cleanup:
-	if (vk.device != VK_NULL_HANDLE) {
-#ifdef USE_VK_OBJECT_TRACKER
-		vk_dump_tracked_objects();
-#endif // USE_VK_OBJECT_TRACKER
+	if (vk.device != VK_NULL_HANDLE)
 		qvkDestroyDevice(vk.device, NULL);
-	}
+
 	if (vk.surface != VK_NULL_HANDLE)
 		qvkDestroySurfaceKHR(vk.instance, vk.surface, NULL);
 

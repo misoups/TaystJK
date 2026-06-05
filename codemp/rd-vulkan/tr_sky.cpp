@@ -397,8 +397,10 @@ static void FillSkySide( const int mins[2], const int maxs[2], float skyTexCoord
 		return;
 
 #if ( (SKY_SUBDIVISIONS+1) * (SKY_SUBDIVISIONS+1) * 6 > SHADER_MAX_VERTEXES )
-	if (tess.numVertexes + tHeight * sWidth > SHADER_MAX_VERTEXES)
-		ri.Error(ERR_DROP, "SHADER_MAX_VERTEXES hit in %s()", __func__);
+	if (tess.numVertexes + tHeight * sWidth > SHADER_MAX_VERTEXES) {
+		ri.Printf(PRINT_WARNING, "WARNING: SHADER_MAX_VERTEXES hit in %s() -- sky clipped\n", __func__);
+		return;
+	}
 #endif
 
 #if ( SKY_SUBDIVISIONS * SKY_SUBDIVISIONS * 6 * 6 > SHADER_MAX_INDEXES )

@@ -35,8 +35,10 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 struct R2GoreTextureCoordinates
 {
-	float				*tex[MAX_LODS];
-	srfG2GoreSurface_t	*tex_vbo[MAX_LODS];
+	union {
+		float				*tex[MAX_LODS];
+		srfG2GoreSurface_t	*tex_vbo[MAX_LODS];
+	};
 
 	R2GoreTextureCoordinates();
 	~R2GoreTextureCoordinates();

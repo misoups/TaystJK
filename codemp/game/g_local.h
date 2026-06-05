@@ -790,6 +790,9 @@ typedef struct {//JAPRO - Serverside - Stats
 	short lowestHP;
 	int checkpoints;
 	int courseID;
+	int bestCPTimes[32]; // best checkpoint split times in ms; 0 = not yet set
+	int bestCPCourseID;  // courseID+1 that bestCPTimes belong to; 0 = uninitialized
+	int bestCPStyle;     // movement style these PBs were loaded for
 } stats_t;
 
 // client data that stays across multiple respawns, but is cleared
@@ -823,8 +826,14 @@ typedef struct clientPersistant_s {
 	vec3_t		telemarkOrigin;//JAPRO - Serverside - Admin - Telemark storage
 	float		telemarkAngle;//JAPRO - Serverside - Admin - Telemark storage
 	float		telemarkPitchAngle;//JAPRO - Serverside - Admin - Telemark storage
+	qboolean	hasSavedPos;		// set after first /savepos this session
+	vec3_t		savePosOrigin;		// origin saved by /savepos
+	vec3_t		savePosAngles;		// viewangles (pitch,yaw,roll) saved by /savepos
+	vec3_t		savePosVelocity;	// velocity saved by /savepos
 	vec3_t		respawnLocation;//JAPRO - Serverside - Admin - Telemark storage
 	float		respawnAngle;
+	vec3_t		savedSpawnOrigin;	// race-mode /savespawn origin (zero = not set)
+	float		savedSpawnAngle;	// race-mode /savespawn yaw
 	//char		clanpass[MAX_QPATH];//Japro - Serverside Clanpass
 	//int			sayteammod;//0 = normal, 1 = clan, 2 = admin
 	int			lastChatTime;//godchat fuck idk why im doing this
@@ -1006,6 +1015,8 @@ struct gclient_s {
 	qboolean	readyToExit;		// wishes to leave the intermission
 
 	qboolean	noclip;
+	qboolean	noclipUsed;		// set when noclip is activated; blocks start trigger and amtelemark until /amtele or /kill resets
+	qboolean	jetpackActivated;	// set when jetpack fires while in MV_JETPACK; blocks /move until /resetspawn or /kill
 
 	int			lastCmdTime;		// level.time of last usercmd_t, for EF_CONNECTION
 									// we can't just use pers.lastCommand.time, because
@@ -1045,6 +1056,7 @@ struct gclient_s {
 	int			lastHereTime;		//japro to optimize bots / autorecord
 	int			afkDuration;
 	qboolean	inactivityWarning;	// qtrue if the five seoond warning has been given
+	int			autoSpecWarnedSec;	// last AFK warning countdown second shown (for g_autoSpec)
 	int			rewardTime;			// clear the EF_AWARD_IMPRESSIVE, etc when time > this
 	int			ourSwoopNum;		//for swoop movementstyle
 
@@ -1765,6 +1777,12 @@ void Touch_DoorTrigger( gentity_t *ent, gentity_t *other, trace_t *trace );
 //
 void trigger_teleporter_touch (gentity_t *self, gentity_t *other, trace_t *trace );
 
+//
+// g_account.c (checkpoint PB)
+//
+void G_LoadCheckpointPBs(const char *username, const char *mapname, int courseid, int style, int bestTimes[32]);
+void G_SaveCheckpointPB(const char *username, const char *mapname, int courseid, int cpIdx, int style, int duration_ms);
+
 
 //
 // g_misc.c
@@ -1874,6 +1892,14 @@ void G_RunThink (gentity_t *ent);
 void AddTournamentQueue(gclient_t *client);
 void QDECL G_LogPrintf( const char *fmt, ... );
 void QDECL G_SecurityLogPrintf( const char *fmt, ... );
+
+// g_crossserver.c — cross-server chat via /say_cross
+void G_CrossServerInit( void );
+void G_CrossServerShutdown( void );
+void G_CrossServerBroadcast( const char *type, const char *name, const char *detail );
+void G_CrossServerSay( gentity_t *ent, const char *text );
+void G_CrossServerPoll( int levelTime );
+void G_CrossServerDisplay( int srcPort, const char *srcHost, const char *type, const char *name, const char *detail );
 void SendScoreboardMessageToAllClients( void );
 const char *G_GetStringEdString(char *refSection, char *refName);
 

@@ -49,6 +49,7 @@ XCVAR_DEF( cg_speedometerJumpsX,	"185",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_speedometerJumpsY,	"300",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_speedometerJumps,		 "10",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_speedometerSize,		"0.75",	NULL,					CVAR_ARCHIVE )
+XCVAR_DEF( cg_speedometerSpeedAlign,"0.0",	NULL,					CVAR_ARCHIVE ) // multiplier: 0=left-align, 0.5=center, 1.0=right-align the speed number
 XCVAR_DEF( cg_drawTeamOverlay,		"0",	CG_TeamOverlayChange,	CVAR_ARCHIVE )
 XCVAR_DEF( cg_drawTeamOverlayX,		"640",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_drawTeamOverlayY,		"0",	NULL,					CVAR_ARCHIVE )
@@ -78,8 +79,6 @@ XCVAR_DEF( cg_chatBoxShowCutoff,	"0",	NULL,					CVAR_ARCHIVE_ND )
 XCVAR_DEF( cg_hudColors,			"0",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_tintHud,				"1",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_drawScore,			"2",	NULL,					CVAR_ARCHIVE ) //score counter on HUD
-XCVAR_DEF( cg_drawScoreX,			"0",	NULL,					CVAR_ARCHIVE ) //horizontal offset for score counter on HUD
-XCVAR_DEF( cg_drawScoreY,			"0",	NULL,					CVAR_ARCHIVE ) //vertical offset for score counter on HUD
 XCVAR_DEF( cg_drawScores,			"1",	NULL,					CVAR_ARCHIVE ) //team score counter in top right
 XCVAR_DEF( cg_drawVote,				"1",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_showpos,				"0",	NULL,					CVAR_NONE )
