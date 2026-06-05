@@ -687,7 +687,7 @@ void SaveGhoul2InfoArray()
 #ifdef _DEBUG
 	assert (written == size);
 #endif
-	if ( !ri.PD_Store (PERSISTENT_G2DATA, data, size) )
+	if ( ri.PD_Store && !ri.PD_Store (PERSISTENT_G2DATA, data, size) )
 	{
 		Com_Printf (S_COLOR_RED "ERROR: Failed to store persistent renderer data.\n");
 	}
