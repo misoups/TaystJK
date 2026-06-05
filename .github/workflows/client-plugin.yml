@@ -161,27 +161,3 @@ jobs:
           path: ${{ github.workspace }}/build/ups-reloaded_plugin_only-linux-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
 
-  publish-latest:
-    name: Publish to latest release
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
-    needs: [msvc, ubuntu]
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          path: artifacts
-
-      - name: Upload to latest release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for dir in artifacts/*/; do
-            for file in "$dir"*; do
-              [ -f "$file" ] || continue
-              name=$(basename "$file")
-              gh release upload latest "$file" --clobber --repo "${{ github.repository }}" \
-                --name "$name" || true
-            done
-          done
