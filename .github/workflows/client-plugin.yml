@@ -78,28 +78,17 @@ jobs:
         working-directory: ${{ github.workspace }}/build
         run: |
           mkdir -p plugin/taystjk
-          cp Release/cgame*.dll              plugin/taystjk/
-          cp Release/ui*.dll                 plugin/taystjk/
-          cp Release/rd-taystjk_*.dll        plugin/
+          cp Release/cgame*.dll       plugin/taystjk/
+          cp Release/ui*.dll          plugin/taystjk/
+          cp Release/rd-taystjk_*.dll plugin/
           cd plugin
-          7z a -r ../TaystJK-client-plugin-windows-${{ matrix.arch }}.zip *
+          7z a -r ../ups-reloaded_plugin_only-windows-${{ matrix.arch }}.zip *
 
       - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
         with:
-          name: TaystJK-client-plugin-windows-${{ matrix.arch }}
-          path: ${{ github.workspace }}/build/TaystJK-client-plugin-windows-${{ matrix.arch }}.zip
+          name: ups-reloaded_plugin_only-windows-${{ matrix.arch }}
+          path: ${{ github.workspace }}/build/ups-reloaded_plugin_only-windows-${{ matrix.arch }}.zip
           if-no-files-found: error
-
-      - name: Attach to GitHub Release
-        if: github.event_name == 'release'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            "${{ github.workspace }}/build/TaystJK-client-plugin-windows-${{ matrix.arch }}.zip" \
-            --clobber \
-            --repo "${{ github.repository }}"
 
   ubuntu:
     name: Linux ${{ matrix.arch }}
@@ -141,7 +130,6 @@ jobs:
         working-directory: ${{ github.workspace }}/build
         run: |
           OPTIONS="-DCMAKE_BUILD_TYPE=Release -DBuildPortableVersion=ON \
-            -DCMAKE_INSTALL_PREFIX=install \
             -DBuildMPEngine=OFF -DBuildMPDed=OFF -DBuildMPGame=OFF \
             -DBuildMPCGame=ON -DBuildMPUI=ON \
             -DBuildMPRdVanilla=ON -DBuildMPRdVulkan=OFF -DBuildMPRend2=OFF \
@@ -161,25 +149,39 @@ jobs:
         working-directory: ${{ github.workspace }}/build
         run: |
           mkdir -p plugin/taystjk
-          cp codemp/cgame/*.so               plugin/taystjk/
-          cp codemp/ui/*.so                  plugin/taystjk/
-          cp codemp/rd-vanilla/*.so          plugin/
-          tar -czvf TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz \
+          cp codemp/cgame/*.so      plugin/taystjk/
+          cp codemp/ui/*.so         plugin/taystjk/
+          cp codemp/rd-vanilla/*.so plugin/
+          tar -czvf ups-reloaded_plugin_only-linux-${{ matrix.arch }}.tar.gz \
             -C plugin .
 
       - uses: actions/upload-artifact@6027e3dd177782cd8ab9af838c04fd81a07f1d47 # v4.6.2
         with:
-          name: TaystJK-client-plugin-linux-${{ matrix.arch }}
-          path: ${{ github.workspace }}/build/TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz
+          name: ups-reloaded_plugin_only-linux-${{ matrix.arch }}
+          path: ${{ github.workspace }}/build/ups-reloaded_plugin_only-linux-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
 
-      - name: Attach to GitHub Release
-        if: github.event_name == 'release'
+  publish-latest:
+    name: Publish to latest release
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
+    needs: [msvc, ubuntu]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+
+      - name: Upload to latest release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            "${{ github.workspace }}/build/TaystJK-client-plugin-linux-${{ matrix.arch }}.tar.gz" \
-            --clobber \
-            --repo "${{ github.repository }}"
+          for dir in artifacts/*/; do
+            for file in "$dir"*; do
+              [ -f "$file" ] || continue
+              name=$(basename "$file")
+              gh release upload latest "$file" --clobber --repo "${{ github.repository }}" \
+                --name "$name" || true
+            done
+          done
