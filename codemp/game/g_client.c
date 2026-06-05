@@ -4977,12 +4977,8 @@ void ClientDisconnect( int clientNum ) {
 
 	if ( !(ent->r.svFlags & SVF_BOT) && ent->client->sess.sessionTeam != TEAM_SPECTATOR )
 		G_CrossServerBroadcast( "quit", ent->client->pers.netname, "" );
-	else if ( !(ent->r.svFlags & SVF_BOT) && ent->client->pers.connected == CON_CONNECTED ) {
-		char cleanName[MAX_NETNAME] = {0};
-		Q_strncpyz( cleanName, ent->client->pers.netname, sizeof( cleanName ) );
-		Q_StripColor( cleanName );
-		trap->SendServerCommand( -1, va( "print \"%s disconnected\n\"", cleanName ) );
-	}
+	else if ( !(ent->r.svFlags & SVF_BOT) && ent->client->pers.connected == CON_CONNECTED )
+		G_CrossServerBroadcast( "quit", ent->client->pers.netname, "" );
 	G_LogPrintf( "ClientDisconnect: %i [%s] (%s) \"%s^7\"\n", clientNum, ent->client->sess.IP, ent->client->pers.guid, ent->client->pers.netname );
 
 	// if we are playing in tourney mode, give a win to the other player and clear his frags for this round
