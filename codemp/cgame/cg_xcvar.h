@@ -50,6 +50,7 @@ XCVAR_DEF( cg_speedometerJumpsY,	"300",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_speedometerJumps,		 "10",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_speedometerSize,		"0.75",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_speedometerSpeedAlign,"0.0",	NULL,					CVAR_ARCHIVE ) // multiplier: 0=left-align, 0.5=center, 1.0=right-align the speed number
+XCVAR_DEF( cg_speedometerMonospace,	"0",	NULL,					CVAR_ARCHIVE ) // 1.0=left-align in fixed slot, 2.0=right-align, interpolated; 0=off
 XCVAR_DEF( cg_drawTeamOverlay,		"0",	CG_TeamOverlayChange,	CVAR_ARCHIVE )
 XCVAR_DEF( cg_drawTeamOverlayX,		"640",	NULL,					CVAR_ARCHIVE )
 XCVAR_DEF( cg_drawTeamOverlayY,		"0",	NULL,					CVAR_ARCHIVE )

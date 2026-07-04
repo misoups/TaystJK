@@ -1826,6 +1826,51 @@ void DF_DrawAccelMeter(void) {
 	cg.previousSpeed = state.cgaz.v;
 }
 
+/* Per-character width cache for monospace speedometer (lazy init, FONT_NONE at scale 1.0). */
+static float    s_speedoChW[256]    = {0};
+static float    s_speedoMaxDigW     = 0.0f;
+static qboolean s_speedoChWInited   = qfalse;
+
+static void InitSpeedoWidths(void) {
+	if (!s_speedoChWInited) {
+		int i;
+		char ch[2] = {'\0', '\0'};
+		for (i = 0; i < 256; i++) {
+			ch[0] = (char)i;
+			s_speedoChW[i] = CG_Text_Width(ch, 1.0f, FONT_NONE);
+		}
+		for (i = '0'; i <= '9'; i++)
+			if (s_speedoChW[i] > s_speedoMaxDigW) s_speedoMaxDigW = s_speedoChW[i];
+		s_speedoChWInited = qtrue;
+	}
+}
+
+/* Draws text L-to-R from x (pixel space) with digits given a fixed slot of monoW.
+ * monoAlign 0.0=left, 1.0=right within each digit slot. */
+static void DrawSpeedoMono(float x, float y, float scale, const vec4_t color,
+	const char *text, float monoW, float monoAlign)
+{
+	vec4_t col;
+	const char *s;
+	char ch[2] = {'\0', '\0'};
+	Vector4Copy(color, col);
+	for (s = text; *s; s++) {
+		if (Q_IsColorString(s)) {
+			memcpy(col, g_color_table[ColorIndex(*(s+1))], sizeof(col));
+			col[3] = color[3];
+			s++; continue;
+		}
+		ch[0] = *s;
+		{
+			float rw = s_speedoChW[(byte)*s] * scale;
+			float dw = (*s >= '0' && *s <= '9') ? monoW : rw;
+			float xo = (dw != rw) ? monoAlign * (dw - rw) : 0.0f;
+			CG_Text_Paint(x + xo, y, scale, col, ch, 0.0f, 0, ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+			x += dw;
+		}
+	}
+}
+
 /*
 ===================
 CG_DrawSpeedometer
@@ -1906,30 +1951,64 @@ japro - Draw the speedometer
 		accelStr3 = S_COLOR_WHITE "m: ";
 	}
 
-	// cg_speedometerSpeedAlign: offset X so the speed number aligns differently.
-	// 0.0 = left-aligned (default), 0.5 = centered, 1.0 = right-aligned.
+	/* cg_speedometerMonospace (1.0-2.0): per-digit fixed slot, 1.0=left 2.0=right.
+	 * cg_speedometerSpeedAlign (0-1): right-align multiplier, matching mvsdk. The
+	 * draw is shifted left by the multiplier times the NUMBER's width (digits only,
+	 * leading spaces NOT counted), so at 1.0 the number's right edge stays fixed as
+	 * digits are added and the unit label stays attached to its left.
+	 * Note: CG_Text_Paint ignores ITEM_ALIGN_*, so alignment is done here by shifting
+	 * x; ITEM_ALIGN_RIGHT must NOT be OR'd into the style arg or the outline is lost. */
 	{
-		float xOffset = 0;
-		if (cg_speedometerSpeedAlign.value != 0.0f)
-			xOffset = -cg_speedometerSpeedAlign.value * CG_Text_Width(va("%.0f", currentSpeed), cg_speedometerSize.value, FONT_NONE);
+		qboolean monoActive = (cg_speedometerMonospace.value >= 1.0f && cg_speedometerMonospace.value <= 2.0f);
+		float    monoW      = 0.0f;
+		float    monoAlign  = 0.0f;
+		float    sz         = cg_speedometerSize.value;
+		float    drawY      = cg_speedometerY.value;
+		float    align      = cg_speedometerSpeedAlign.value;
+		const char *accel;
+		char     numStr[32];
+		char     padded[32];
+		int      digits;
+		float    xOffset = 0.0f;
+		float    drawX;
 
-		if (!(cg_speedometer.integer & SPEEDOMETER_KPH) && !(cg_speedometer.integer & SPEEDOMETER_MPH))
-		{
-			Com_sprintf(speedStr, sizeof(speedStr), "   %.0f", state.speedometer.speed);
-			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr, 0.0f, 0, ITEM_ALIGN_LEFT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-		}
-		else if (cg_speedometer.integer & SPEEDOMETER_KPH)
-		{
-			Com_sprintf(speedStr2, sizeof(speedStr2), "   %.0f", state.speedometer.speed);
-			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr2, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr2, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-		}
+		/* Pick the unit label for the active mode; the number is identical in all. */
+		if (cg_speedometer.integer & SPEEDOMETER_KPH)
+			accel = accelStr2;
 		else if (cg_speedometer.integer & SPEEDOMETER_MPH)
-		{
-			Com_sprintf(speedStr3, sizeof(speedStr3), "   %.0f", state.speedometer.speed);
-			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorWhite, accelStr3, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
-			CG_Text_Paint((speedometerXPos + xOffset) * cgs.widthRatioCoef, cg_speedometerY.value, cg_speedometerSize.value, colorSpeed, speedStr3, 0.0f, 0, ITEM_ALIGN_RIGHT | ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+			accel = accelStr3;
+		else
+			accel = accelStr;
+
+		Com_sprintf(numStr, sizeof(numStr), "%.0f", state.speedometer.speed);
+		Com_sprintf(padded, sizeof(padded), "   %s", numStr);
+		digits = (int)strlen(numStr);
+
+		if (monoActive) {
+			InitSpeedoWidths();
+			monoW     = s_speedoMaxDigW * sz;
+			monoAlign = cg_speedometerMonospace.value - 1.0f;
+		}
+
+		/* Shift left by the NUMBER width only (mvsdk behaviour) — the leading spaces are
+		 * intentionally excluded so the number's right edge is the fixed anchor. */
+		if (align != 0.0f) {
+			float numW = monoActive ? (monoW * (float)digits)
+			                        : CG_Text_Width(numStr, sz, FONT_NONE);
+			xOffset = -align * numW;
+		}
+		/* widthRatioCoef applies to the ANCHOR only. xOffset and the per-digit advances
+		 * in DrawSpeedoMono are both in font (virtual-640) units, so they must NOT be
+		 * scaled by the ratio or the leftward shift won't cancel the rightward digit
+		 * drawing — which made multi-digit speeds drift off the right edge. */
+		drawX = speedometerXPos * cgs.widthRatioCoef + xOffset;
+
+		if (monoActive) {
+			DrawSpeedoMono(drawX, drawY, sz, colorWhite, accel,  monoW, monoAlign);
+			DrawSpeedoMono(drawX, drawY, sz, colorSpeed, padded, monoW, monoAlign);
+		} else {
+			CG_Text_Paint(drawX, drawY, sz, colorWhite, accel,  0.0f, 0, ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
+			CG_Text_Paint(drawX, drawY, sz, colorSpeed, padded, 0.0f, 0, ITEM_TEXTSTYLE_OUTLINED, FONT_NONE);
 		}
 	}
 	speedometerXPos += 70;
