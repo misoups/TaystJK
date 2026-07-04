@@ -207,27 +207,33 @@ void G_CrossServerDisplay( int srcPort, const char *srcHost, const char *type,
 	Q_strncpyz( cleanHost, srcHost, sizeof(cleanHost) );
 	Q_CleanStr( cleanHost );
 
-	/* Per-server prefix colour:
-	 *   ~ups Reloaded #1  -> ^2 (green)
-	 *   ~ups Reloaded #2  -> ^5 (cyan)
-	 * Any other server name defaults to green. */
-	const char *prefixColor = strstr(cleanHost, "#2") ? "^5" : "^2";
+	/* Per-server prefix:
+	 *   ~ups Reloaded #1 -> ^2[~ups Reloaded #1]
+	 *   ~ups Reloaded #2 -> ^5[~ups Reloaded #2]
+	 * Any other server falls back to ^2[hostname]. */
+	char prefix[80];
+	if ( strstr(cleanHost, "Reloaded #1") )
+		Q_strncpyz( prefix, "^2[~ups Reloaded #1]", sizeof(prefix) );
+	else if ( strstr(cleanHost, "Reloaded #2") )
+		Q_strncpyz( prefix, "^5[~ups Reloaded #2]", sizeof(prefix) );
+	else
+		Com_sprintf( prefix, sizeof(prefix), "^2[%s]", cleanHost );
 
 	if ( !Q_stricmp(type, "connect") ) {
 		G_LogPrintf( "cross_connect(%s): %s\n", cleanHost, name );
 		Com_sprintf( cmd, sizeof(cmd),
-		             "print \"%s[%s] ^3%s ^7connected\n\"",
-		             prefixColor, cleanHost, name );
+		             "print \"%s ^3%s ^7connected\n\"",
+		             prefix, name );
 	} else if ( !Q_stricmp(type, "join") ) {
 		G_LogPrintf( "cross_join(%s): %s\n", cleanHost, name );
 		Com_sprintf( cmd, sizeof(cmd),
-		             "print \"%s[%s] ^3%s ^7entered the game\n\"",
-		             prefixColor, cleanHost, name );
+		             "print \"%s ^3%s ^7entered the game\n\"",
+		             prefix, name );
 	} else if ( !Q_stricmp(type, "quit") ) {
 		G_LogPrintf( "cross_quit(%s): %s\n", cleanHost, name );
 		Com_sprintf( cmd, sizeof(cmd),
-		             "print \"%s[%s] ^3%s ^7left the game\n\"",
-		             prefixColor, cleanHost, name );
+		             "print \"%s ^3%s ^7left the game\n\"",
+		             prefix, name );
 	} else if ( !Q_stricmp(type, "run") ) {
 		/* Only display on the receiving server — the originating server already
 		 * showed it via PrintRaceTime. */
@@ -235,15 +241,15 @@ void G_CrossServerDisplay( int srcPort, const char *srcHost, const char *type,
 			return;
 		G_LogPrintf( "cross_run(%s): %s\n", cleanHost, detail );
 		Com_sprintf( cmd, sizeof(cmd),
-		             "print \"%s[%s]^7 %s\n\"",
-		             prefixColor, cleanHost, detail );
+		             "print \"%s^7 %s\n\"",
+		             prefix, detail );
 	} else { /* chat */
 		G_LogPrintf( "say_cross(%s): %s: %s\n", cleanHost, name, detail );
 		if ( cleanHost[0] )
-			Com_sprintf( cmd, sizeof(cmd), "chat \"%s[%s] ^7%s^7: %s^7\"",
-			             prefixColor, cleanHost, name, detail );
+			Com_sprintf( cmd, sizeof(cmd), "chat \"%s ^7%s:^2 %s^7\"",
+			             prefix, name, detail );
 		else
-			Com_sprintf( cmd, sizeof(cmd), "chat \"^2[CROSS] ^7%s^7: %s^7\"",
+			Com_sprintf( cmd, sizeof(cmd), "chat \"^2[CROSS] ^7%s:^2 %s^7\"",
 			             name, detail );
 	}
 
