@@ -3957,8 +3957,12 @@ void ClientThink_real( gentity_t *ent ) {
 	else if (pmove_fixed.integer || client->pers.pmoveFixed)
 		ucmd->serverTime = ((ucmd->serverTime + pmove_msec.integer-1) / pmove_msec.integer) * pmove_msec.integer;
 
-	if ((client->sess.sessionTeam != TEAM_SPECTATOR) && !client->ps.stats[STAT_RACEMODE] && ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_QUAJK)) { //Ok,, this should be like every frame, right??
+	if ((client->sess.sessionTeam != TEAM_SPECTATOR) && !client->ps.stats[STAT_RACEMODE] && ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_SURF || g_movementStyle.integer == MV_QUAJK)) { //Ok,, this should be like every frame, right??
 		client->sess.movementStyle = g_movementStyle.integer;
+	}
+	// For surf servers: force surf even in race mode so players can't /move away from it.
+	if (client->sess.sessionTeam != TEAM_SPECTATOR && g_movementStyle.integer == MV_SURF) {
+		client->sess.movementStyle = MV_SURF;
 	}
 
 	// Non-TaystJK clients cannot predict custom physics — force them to vanilla JKA movement
@@ -4041,6 +4045,12 @@ void ClientThink_real( gentity_t *ent ) {
 		if (movementStyle == MV_RJCPM || movementStyle == MV_RJQ3) {
 			ent->client->ps.stats[STAT_WEAPONS] = (1 << WP_MELEE) + (1 << WP_SABER) + (1 << WP_ROCKET_LAUNCHER);
 			ent->client->ps.ammo[AMMO_ROCKETS] = 2;
+			//[JAPRO - Plasma Climb (beta) - also grant the repeater (+infinite bolts) so it can be used for plasma climbing]
+			if (g_plasmaClimb.integer) {
+				ent->client->ps.stats[STAT_WEAPONS] |= (1 << WP_REPEATER);
+				ent->client->ps.ammo[AMMO_METAL_BOLTS] = 999;
+			}
+			//[JAPRO - Plasma Climb (beta) - End]
 			if (ent->health > 0)
 				ent->client->ps.stats[STAT_ARMOR] = ent->client->ps.stats[STAT_HEALTH] = ent->health = 100;
 		}

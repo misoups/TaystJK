@@ -1694,6 +1694,19 @@ static void WP_RepeaterMainFire( gentity_t *ent, vec3_t dir )
 	// we don't want it to bounce forever
 	missile->bounceCount = 8;
 
+//[JAPRO - Plasma Climb (beta) - Q3-defrag-style plasma climbing - Start]
+	// Give the primary bolt a small splash so it imparts self-knockback, just
+	// like the Q3 plasma gun. Racemode only (no PvP balance impact), and the
+	// existing G_Damage racemode logic only lets self-knockback through for the
+	// rocket-jump styles (RJQ3/RJCPM/JETPACK) - so climbing is gated there too.
+	if ( g_plasmaClimb.integer && ent->client && ent->client->sess.raceMode ) {
+		missile->splashDamage = g_plasmaClimbDamage.integer * g_splashDamageScale.value;
+		missile->splashRadius = g_plasmaClimbRadius.integer;
+		missile->splashMethodOfDeath = MOD_REPEATER;
+		missile->bounceCount = 0; // detonate on first surface so splash lands where you aim
+	}
+//[JAPRO - Plasma Climb (beta) - Q3-defrag-style plasma climbing - End]
+
 	if (g_tweakWeapons.integer & WT_PROJECTILE_GRAVITY) //JAPRO - Serverside - Give bullets gravity!
 		missile->s.pos.trType = TR_GRAVITY;
 }

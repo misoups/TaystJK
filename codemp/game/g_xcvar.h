@@ -325,6 +325,11 @@ XCVAR_DEF( g_autoQuit,					"0",			NULL,				CVAR_ARCHIVE,									qtrue )
 //JAPRO RACE / ACCOUNTS
 XCVAR_DEF( g_raceMode,					"0",			CVU_RaceMode,		CVAR_ARCHIVE,									qtrue )
 XCVAR_DEF( g_allowRaceTele,				"0",			NULL,				CVAR_ARCHIVE,									qtrue )
+
+//JAPRO PLASMA CLIMB (beta) - Q3-defrag-style plasma climbing on repeater primary fire, racemode only
+XCVAR_DEF( g_plasmaClimb,				"0",			NULL,				CVAR_ARCHIVE,									qtrue )
+XCVAR_DEF( g_plasmaClimbDamage,			"20",			NULL,				CVAR_ARCHIVE,									qtrue )
+XCVAR_DEF( g_plasmaClimbRadius,			"96",			NULL,				CVAR_ARCHIVE,									qtrue )
 XCVAR_DEF( g_allowRegistration,			"1",			CVU_Registration,	CVAR_ARCHIVE,									qtrue )
 XCVAR_DEF( sv_pluginKey,				"0",			NULL,				CVAR_ARCHIVE,									qfalse )
 XCVAR_DEF( g_forceLogin,				"0",			NULL,				CVAR_ARCHIVE,									qfalse )
