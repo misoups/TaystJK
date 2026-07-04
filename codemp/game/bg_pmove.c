@@ -440,7 +440,7 @@ QINLINE int PM_GetMovePhysics(void)
 #if _GAME
 	if (pm->ps->stats[STAT_RACEMODE])
 		return (pm->ps->stats[STAT_MOVEMENTSTYLE]);
-	else if ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || (g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_OCPM || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_QUAJK))
+	else if ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || (g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_OCPM || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_SURF || g_movementStyle.integer == MV_QUAJK))
 		return (g_movementStyle.integer);
 	else if (g_movementStyle.integer < MV_SIEGE)
 		return MV_SIEGE;
@@ -6061,6 +6061,11 @@ static void PM_WalkMove( void ) {
 	{//We just ignore this with slick style since we area always slick, we dont need the flag to tell us that
 		if (moveStyle == MV_OCPM || moveStyle == MV_QUAJK)
 			accelerate = pm_cpm_accelerate;
+//[JAPRO - Make CPM/RJCPM handle SLICK-textured surfaces like OCPM (controllable pm_cpm_accelerate instead
+// of the pm_airaccelerate slide). Scoped to actual slick surfaces; knockback behaviour is left unchanged.]
+		else if ((moveStyle == MV_CPM || moveStyle == MV_RJCPM) && (pml.groundTrace.surfaceFlags & SURF_SLICK))
+			accelerate = pm_cpm_accelerate;
+//[JAPRO - End]
 		else
 			accelerate = pm_airaccelerate;
 	}
