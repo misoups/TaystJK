@@ -3009,7 +3009,7 @@ char *ClientConnect( int clientNum, qboolean firstTime, qboolean isBot ) {
 	te->s.eventParm = clientNum;
 
 	if (firstTime)
-		ent->client->sess.movementStyle = MV_JKA;//default to JKA style
+		ent->client->sess.movementStyle = (g_movementStyle.integer > 0 && g_movementStyle.integer < MV_NUMSTYLES) ? g_movementStyle.integer : MV_JKA;
 
 	// for statistics
 //	client->areabits = areabits;
