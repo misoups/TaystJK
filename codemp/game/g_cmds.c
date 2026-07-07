@@ -2829,6 +2829,19 @@ void Cmd_MapList_f( gentity_t *ent ) {
 		va( "print \"^5%i maps. Use ^3/callvote mapnum <n>^5 or ^3/callvote randommap\n\"", numMaps ) );
 }
 
+void G_ListRecentlyAddedMaps( gentity_t *ent, int page );  // g_account.c
+
+// /recentlyadded [page] — show race maps added to the server recently (newest first, 10 per page).
+void Cmd_RecentlyAdded_f( gentity_t *ent ) {
+	int page = 1;
+	if ( trap->Argc() > 1 ) {
+		char arg[8];
+		trap->Argv( 1, arg, sizeof(arg) );
+		page = atoi( arg );
+	}
+	G_ListRecentlyAddedMaps( ent, page );
+}
+
 typedef struct mapname_s {
 	const char	*name;
 } mapname_t;
@@ -9312,6 +9325,7 @@ command_t commands[] = {
 
 	{ "mapents",			Cmd_MapEnts_f,				CMD_CHEAT|CMD_NOINTERMISSION },
 	{ "maplist",			Cmd_MapList_f,				0 },
+	{ "recentlyadded",		Cmd_RecentlyAdded_f,		0 },
 
 	{ "master",				Cmd_AddMaster_f,			CMD_NOINTERMISSION },
 	{ "masterList",			Cmd_ListMasters_f,			CMD_NOINTERMISSION },

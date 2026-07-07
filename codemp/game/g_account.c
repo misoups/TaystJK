@@ -7784,6 +7784,53 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 		G_ErrorPrint("ERROR: SQL Create Failed (InitGameAccountStuff LocalRunLog)", s);
 	CALL_SQLITE (finalize(stmt));
 
+	// Track which race maps exist, so /recentlyadded can list new additions.
+	sql = "CREATE TABLE IF NOT EXISTS KnownMaps(coursename VARCHAR(40) PRIMARY KEY COLLATE NOCASE, first_seen UNSIGNED INTEGER)";
+	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+	s = sqlite3_step(stmt);
+	if (s != SQLITE_DONE)
+		G_ErrorPrint("ERROR: SQL Create Failed (InitGameAccountStuff KnownMaps)", s);
+	CALL_SQLITE (finalize(stmt));
+
+	// Maps already present the first time this ever runs are stamped 0 (pre-existing);
+	// maps that first appear on a later mapload get the real timestamp — so /recentlyadded
+	// lists genuinely-new maps rather than the entire pack on day one.
+	{
+		static char mapBuf[32768];
+		int   numMaps, i, len, existing = 0, stamp;
+		char *p;
+
+		sql = "SELECT COUNT(*) FROM KnownMaps";
+		CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+		if (sqlite3_step(stmt) == SQLITE_ROW)
+			existing = sqlite3_column_int(stmt, 0);
+		CALL_SQLITE (finalize(stmt));
+
+		stamp = (existing == 0) ? 0 : (int)time(NULL);
+
+		numMaps = trap->FS_GetFileList("maps", ".bsp", mapBuf, sizeof(mapBuf));
+		if (numMaps > 0) {
+			sqlite3_exec(db, "BEGIN", NULL, NULL, NULL);
+			sql = "INSERT OR IGNORE INTO KnownMaps (coursename, first_seen) VALUES (?, ?)";
+			CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+			p = mapBuf;
+			for (i = 0; i < numMaps; i++) {
+				len = strlen(p);
+				if (len > 4 && !Q_stricmp(p + len - 4, ".bsp"))
+					p[len - 4] = '\0';
+				if (p[0]) {
+					sqlite3_bind_text(stmt, 1, p, -1, SQLITE_STATIC);
+					sqlite3_bind_int (stmt, 2, stamp);
+					sqlite3_step(stmt);
+					sqlite3_reset(stmt);
+				}
+				p += len + 1;
+			}
+			CALL_SQLITE (finalize(stmt));
+			sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
+		}
+	}
+
 #if _ELORANKING
 	/*
 	sql = "CREATE TABLE IF NOT EXISTS DuelRanks(id INTEGER PRIMARY KEY, username VARCHAR(16), type UNSIGNED SMALLINT, rank DECIMAL(6,2), TSSUM DECIMAL(9,2), count UNSIGNED INTEGER)"; //We only need like 2 decimal precision here so how do that in sqlite C? --todo
@@ -7809,6 +7856,67 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 	//BuildMapHighscores();//Build highscores into memory from database
 
 	//DebugWriteToDB("InitGameAccountStuff");
+}
+
+// /recentlyadded [page] — list race maps added to the server, newest first, 10 per page.
+void G_ListRecentlyAddedMaps(gentity_t *ent, int page) {
+	sqlite3      *db;
+	sqlite3_stmt *stmt;
+	char         *sql;
+	char          names[10][48];
+	int           times[10];
+	int           n = 0, i, total = 0, maxPage, now = (int)time(NULL);
+	char          buf[1024] = {0}, line[96];
+
+	CALL_SQLITE (open (LOCAL_DB_PATH, & db));
+
+	sql = "SELECT COUNT(*) FROM KnownMaps WHERE first_seen > 0";
+	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+	if (sqlite3_step(stmt) == SQLITE_ROW)
+		total = sqlite3_column_int(stmt, 0);
+	CALL_SQLITE (finalize(stmt));
+
+	if (!total) {
+		CALL_SQLITE (close(db));
+		trap->SendServerCommand(ent - g_entities, "print \"^7No maps have been added recently. Use ^3/maplist^7 for the full list.\n\"");
+		return;
+	}
+
+	maxPage = (total + 9) / 10;
+	if (page < 1) page = 1;
+	if (page > maxPage) page = maxPage;
+
+	sql = "SELECT coursename, first_seen FROM KnownMaps WHERE first_seen > 0 ORDER BY first_seen DESC, rowid DESC LIMIT 10 OFFSET ?";
+	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+	CALL_SQLITE (bind_int (stmt, 1, (page - 1) * 10));
+	while (sqlite3_step(stmt) == SQLITE_ROW && n < 10) {
+		const char *nm = (const char *)sqlite3_column_text(stmt, 0);
+		Q_strncpyz(names[n], nm ? nm : "", sizeof(names[n]));
+		times[n] = sqlite3_column_int(stmt, 1);
+		n++;
+	}
+	CALL_SQLITE (finalize(stmt));
+	CALL_SQLITE (close(db));
+
+	trap->SendServerCommand(ent - g_entities, va("print \"^5Recently added maps ^7(page %i/%i, %i total):\n\"", page, maxPage, total));
+	for (i = 0; i < n; i++) {
+		int  daysAgo = (now - times[i]) / 86400;
+		char when[24];
+		if (daysAgo <= 0)      Q_strncpyz(when, "today", sizeof(when));
+		else if (daysAgo == 1) Q_strncpyz(when, "yesterday", sizeof(when));
+		else                   Com_sprintf(when, sizeof(when), "%i days ago", daysAgo);
+		Com_sprintf(line, sizeof(line), "  ^3%-28s ^7%s\n", names[i], when);
+		if (strlen(buf) + strlen(line) + 1 >= sizeof(buf)) {
+			trap->SendServerCommand(ent - g_entities, va("print \"%s\"", buf));
+			buf[0] = '\0';
+		}
+		Q_strcat(buf, sizeof(buf), line);
+	}
+	if (buf[0])
+		trap->SendServerCommand(ent - g_entities, va("print \"%s\"", buf));
+
+	if (page < maxPage)
+		trap->SendServerCommand(ent - g_entities, va("print \"^5Use ^3/recentlyadded %i^5 for more.\n\"", page + 1));
 }
 
 void G_SpawnWarpLocationsFromCfg(void) //loda fixme
