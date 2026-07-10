@@ -1134,7 +1134,7 @@ void PM_Q2StepSlideMove( qboolean gravity )
 	up_dist   = ( up[0]    - start_o[0] ) * ( up[0]    - start_o[0] )
 	          + ( up[1]    - start_o[1] ) * ( up[1]    - start_o[1] );
 
-	if ( down_dist >= up_dist || trace.plane.normal[2] < MIN_STEP_NORMAL ) {
+	if ( down_dist > up_dist || trace.plane.normal[2] < MIN_STEP_NORMAL ) {
 		VectorCopy( down_o, pm->ps->origin );
 		VectorCopy( down_v, pm->ps->velocity );
 		return;
