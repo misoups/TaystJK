@@ -140,19 +140,49 @@ int UI_ParseAnimationFile(const char *filename, animation_t *animset, qboolean i
 	return BG_ParseAnimationFile(filename, animset, isHumanoid);
 }
 
+/* cg_typeFont: swaps the default in-game (medium) font at runtime.
+ * 0 = default ergoec, 1 = xolo, 2 = xirod. The alternates ship in a pk3
+ * (fonts/xolo*, fonts/xirod*). Registration is cached and only re-run when
+ * the cvar changes, so this is cheap to call per glyph. */
+qhandle_t CG_TypeFontHandle(void)
+{
+	static int       s_cachedSel  = -1;
+	static qhandle_t s_cachedFont = 0;
+	int sel = cg_typeFont.integer;
+
+	if (sel != s_cachedSel)
+	{
+		const char *name;
+		switch (sel)
+		{
+			case 1:  name = "xolo";   break;
+			case 2:  name = "xirod";  break;
+			default: name = "ergoec"; break;
+		}
+		s_cachedFont = trap->R_RegisterFont(name);
+		s_cachedSel  = sel;
+	}
+
+	/* If the selected font failed to register (pk3 missing), fall back. */
+	if (!s_cachedFont)
+		return cgDC.Assets.qhMediumFont;
+
+	return s_cachedFont;
+}
+
 int MenuFontToHandle(int iMenuFont)
 {
 	switch (iMenuFont)
 	{
 		case FONT_SMALL:	return cgDC.Assets.qhSmallFont; break;
-		case FONT_MEDIUM:	return cgDC.Assets.qhMediumFont; break;
+		case FONT_MEDIUM:	return CG_TypeFontHandle(); break;
 		case FONT_LARGE:	return cgDC.Assets.qhBigFont; break;
 		case FONT_SMALL2:	return cgDC.Assets.qhSmall2Font; break;
-		default: return cgDC.Assets.qhMediumFont; break;
+		default: return CG_TypeFontHandle(); break;
 
 	}
 
-	return cgDC.Assets.qhMediumFont;
+	return CG_TypeFontHandle();
 }
 
 

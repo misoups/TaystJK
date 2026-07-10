@@ -1826,15 +1826,19 @@ void DF_DrawAccelMeter(void) {
 	cg.previousSpeed = state.cgaz.v;
 }
 
-/* Per-character width cache for monospace speedometer (lazy init, FONT_NONE at scale 1.0). */
+/* Per-character width cache for monospace speedometer (lazy init, FONT_NONE at scale 1.0).
+ * FONT_NONE resolves through cg_typeFont, so the cache must be rebuilt whenever the
+ * selected font changes — otherwise the mono slot width is stale and digits smush/spread. */
 static float    s_speedoChW[256]    = {0};
 static float    s_speedoMaxDigW     = 0.0f;
 static qboolean s_speedoChWInited   = qfalse;
+static int      s_speedoFontSel     = -1;   // cg_typeFont value the cache was built for
 
 static void InitSpeedoWidths(void) {
-	if (!s_speedoChWInited) {
+	if (!s_speedoChWInited || s_speedoFontSel != cg_typeFont.integer) {
 		int i;
 		char ch[2] = {'\0', '\0'};
+		s_speedoMaxDigW = 0.0f;   // reset before recompute; the font may have changed
 		for (i = 0; i < 256; i++) {
 			ch[0] = (char)i;
 			s_speedoChW[i] = CG_Text_Width(ch, 1.0f, FONT_NONE);
@@ -1842,6 +1846,7 @@ static void InitSpeedoWidths(void) {
 		for (i = '0'; i <= '9'; i++)
 			if (s_speedoChW[i] > s_speedoMaxDigW) s_speedoMaxDigW = s_speedoChW[i];
 		s_speedoChWInited = qtrue;
+		s_speedoFontSel   = cg_typeFont.integer;
 	}
 }
 
