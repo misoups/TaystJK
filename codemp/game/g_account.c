@@ -7788,18 +7788,23 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 	CALL_SQLITE (finalize(stmt));
 
 	// Track which race maps exist, so /recentlyadded can list new additions.
-	sql = "CREATE TABLE IF NOT EXISTS KnownMaps(coursename VARCHAR(40) PRIMARY KEY COLLATE NOCASE, first_seen UNSIGNED INTEGER)";
+	sql = "CREATE TABLE IF NOT EXISTS KnownMaps(coursename VARCHAR(40) PRIMARY KEY COLLATE NOCASE, first_seen UNSIGNED INTEGER, removed UNSIGNED TINYINT NOT NULL DEFAULT 0)";
 	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
 	s = sqlite3_step(stmt);
 	if (s != SQLITE_DONE)
 		G_ErrorPrint("ERROR: SQL Create Failed (InitGameAccountStuff KnownMaps)", s);
 	CALL_SQLITE (finalize(stmt));
 
+	// Migration for DBs created before the removed column existed (errors ignored if it already does).
+	sqlite3_exec(db, "ALTER TABLE KnownMaps ADD COLUMN removed UNSIGNED TINYINT NOT NULL DEFAULT 0", NULL, NULL, NULL);
+
 	// Maps already present the first time this ever runs are stamped 0 (pre-existing);
 	// maps that first appear on a later mapload get the real timestamp — so /recentlyadded
 	// lists genuinely-new maps rather than the entire pack on day one.
 	{
-		static char mapBuf[32768];
+		// generous buffer: truncation here would wrongly flag the maps that
+		// don't fit as removed, so leave plenty of headroom for large servers
+		static char mapBuf[131072];
 		int   numMaps, i, len, existing = 0, stamp;
 		char *p;
 
@@ -7813,9 +7818,22 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 
 		numMaps = trap->FS_GetFileList("maps", ".bsp", mapBuf, sizeof(mapBuf));
 		if (numMaps > 0) {
+			sqlite3_stmt *presentStmt, *restampStmt;
+
 			sqlite3_exec(db, "BEGIN", NULL, NULL, NULL);
+
+			// collect the maps currently on disk so removed ones can be flagged afterwards
+			sqlite3_exec(db, "CREATE TEMP TABLE IF NOT EXISTS PresentMaps(coursename VARCHAR(40) PRIMARY KEY COLLATE NOCASE)", NULL, NULL, NULL);
+			sqlite3_exec(db, "DELETE FROM PresentMaps", NULL, NULL, NULL);
+
 			sql = "INSERT OR IGNORE INTO KnownMaps (coursename, first_seen) VALUES (?, ?)";
 			CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
+			sql = "INSERT OR IGNORE INTO PresentMaps (coursename) VALUES (?)";
+			CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & presentStmt, NULL));
+			// a map that comes back after being removed counts as newly added again
+			sql = "UPDATE KnownMaps SET first_seen = ?, removed = 0 WHERE coursename = ? AND removed = 1";
+			CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & restampStmt, NULL));
+
 			p = mapBuf;
 			for (i = 0; i < numMaps; i++) {
 				len = strlen(p);
@@ -7826,10 +7844,25 @@ void InitGameAccountStuff( void ) { //Called every mapload , move the create tab
 					sqlite3_bind_int (stmt, 2, stamp);
 					sqlite3_step(stmt);
 					sqlite3_reset(stmt);
+
+					sqlite3_bind_text(presentStmt, 1, p, -1, SQLITE_STATIC);
+					sqlite3_step(presentStmt);
+					sqlite3_reset(presentStmt);
+
+					sqlite3_bind_int (restampStmt, 1, stamp);
+					sqlite3_bind_text(restampStmt, 2, p, -1, SQLITE_STATIC);
+					sqlite3_step(restampStmt);
+					sqlite3_reset(restampStmt);
 				}
 				p += len + 1;
 			}
 			CALL_SQLITE (finalize(stmt));
+			CALL_SQLITE (finalize(presentStmt));
+			CALL_SQLITE (finalize(restampStmt));
+
+			// anything known but no longer on disk is flagged removed (kept for history)
+			sqlite3_exec(db, "UPDATE KnownMaps SET removed = 1 WHERE coursename NOT IN (SELECT coursename FROM PresentMaps)", NULL, NULL, NULL);
+
 			sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
 		}
 	}
@@ -7873,7 +7906,7 @@ void G_ListRecentlyAddedMaps(gentity_t *ent, int page) {
 
 	CALL_SQLITE (open (LOCAL_DB_PATH, & db));
 
-	sql = "SELECT COUNT(*) FROM KnownMaps WHERE first_seen > 0";
+	sql = "SELECT COUNT(*) FROM KnownMaps WHERE first_seen > 0 AND removed = 0";
 	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
 	if (sqlite3_step(stmt) == SQLITE_ROW)
 		total = sqlite3_column_int(stmt, 0);
@@ -7889,7 +7922,7 @@ void G_ListRecentlyAddedMaps(gentity_t *ent, int page) {
 	if (page < 1) page = 1;
 	if (page > maxPage) page = maxPage;
 
-	sql = "SELECT coursename, first_seen FROM KnownMaps WHERE first_seen > 0 ORDER BY first_seen DESC, rowid DESC LIMIT 10 OFFSET ?";
+	sql = "SELECT coursename, first_seen FROM KnownMaps WHERE first_seen > 0 AND removed = 0 ORDER BY first_seen DESC, rowid DESC LIMIT 10 OFFSET ?";
 	CALL_SQLITE (prepare_v2 (db, sql, strlen (sql) + 1, & stmt, NULL));
 	CALL_SQLITE (bind_int (stmt, 1, (page - 1) * 10));
 	while (sqlite3_step(stmt) == SQLITE_ROW && n < 10) {
