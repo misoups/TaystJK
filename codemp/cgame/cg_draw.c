@@ -9631,6 +9631,7 @@ void IntegerToRaceName(int style, char *styleString, size_t styleStringSize)
 		case MV_TRIBES:		Q_strncpyz(styleString, "tribes", styleStringSize);		break;
 		case MV_SURF:		Q_strncpyz(styleString, "surf", styleStringSize);		break;
 		case MV_QUAJK:		Q_strncpyz(styleString, "quajk", styleStringSize);		break;
+		case MV_SICKO:		Q_strncpyz(styleString, "sicko", styleStringSize);		break;
 		default:			Q_strncpyz(styleString, "ERROR", styleStringSize);		return;
 	}
 

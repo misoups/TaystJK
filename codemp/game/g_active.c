@@ -3957,7 +3957,7 @@ void ClientThink_real( gentity_t *ent ) {
 	else if (pmove_fixed.integer || client->pers.pmoveFixed)
 		ucmd->serverTime = ((ucmd->serverTime + pmove_msec.integer-1) / pmove_msec.integer) * pmove_msec.integer;
 
-	if ((client->sess.sessionTeam != TEAM_SPECTATOR) && !client->ps.stats[STAT_RACEMODE] && ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_SURF || g_movementStyle.integer == MV_QUAJK)) { //Ok,, this should be like every frame, right??
+	if ((client->sess.sessionTeam != TEAM_SPECTATOR) && !client->ps.stats[STAT_RACEMODE] && ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_SURF || g_movementStyle.integer == MV_QUAJK || g_movementStyle.integer == MV_SICKO)) { //Ok,, this should be like every frame, right??
 		client->sess.movementStyle = g_movementStyle.integer;
 	}
 	// For surf servers: force surf even in race mode so players can't /move away from it.
@@ -4080,7 +4080,7 @@ void ClientThink_real( gentity_t *ent ) {
 		else {
 			client->ps.ammo[AMMO_POWERCELL] = 300;
 
-			if (movementStyle == MV_SIEGE || movementStyle == MV_JKA || movementStyle == MV_QW || movementStyle == MV_PJK || movementStyle == MV_SP || movementStyle == MV_SPEED || movementStyle == MV_JETPACK || movementStyle == MV_QUAJK) {
+			if (movementStyle == MV_SIEGE || movementStyle == MV_JKA || movementStyle == MV_QW || movementStyle == MV_PJK || movementStyle == MV_SP || movementStyle == MV_SPEED || movementStyle == MV_JETPACK || movementStyle == MV_QUAJK || movementStyle == MV_SICKO) {
 				ent->client->ps.stats[STAT_WEAPONS] = (1 << WP_MELEE) + (1 << WP_SABER) + (1 << WP_DISRUPTOR) + (1 << WP_STUN_BATON);
 			}
 			else {
@@ -4479,10 +4479,10 @@ void ClientThink_real( gentity_t *ent ) {
 		client->ps.speed = g_speed.value;
 		if (client->sess.raceMode || client->ps.stats[STAT_RACEMODE])
 			client->ps.speed = 250.0f;
-		if (client->ps.stats[STAT_MOVEMENTSTYLE] == MV_QW || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_CPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_OCPM  || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_Q3 || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_WSW || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_RJQ3 || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_RJCPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_BOTCPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_TRIBES || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_QUAJK) {//qw is 320 too
-			if (client->sess.movementStyle == MV_QW || client->sess.movementStyle == MV_CPM || client->sess.movementStyle == MV_OCPM || client->sess.movementStyle == MV_Q3 || client->sess.movementStyle == MV_WSW || client->sess.movementStyle == MV_RJQ3 || client->sess.movementStyle == MV_RJCPM || client->sess.movementStyle == MV_BOTCPM || client->sess.movementStyle == MV_TRIBES || client->sess.movementStyle == MV_QUAJK) {  //loda double check idk...
+		if (client->ps.stats[STAT_MOVEMENTSTYLE] == MV_QW || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_CPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_OCPM  || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_Q3 || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_WSW || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_RJQ3 || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_RJCPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_BOTCPM || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_TRIBES || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_QUAJK || client->ps.stats[STAT_MOVEMENTSTYLE] == MV_SICKO) {//qw is 320 too
+			if (client->sess.movementStyle == MV_QW || client->sess.movementStyle == MV_CPM || client->sess.movementStyle == MV_OCPM || client->sess.movementStyle == MV_Q3 || client->sess.movementStyle == MV_WSW || client->sess.movementStyle == MV_RJQ3 || client->sess.movementStyle == MV_RJCPM || client->sess.movementStyle == MV_BOTCPM || client->sess.movementStyle == MV_TRIBES || client->sess.movementStyle == MV_QUAJK || client->sess.movementStyle == MV_SICKO) {  //loda double check idk...
 				client->ps.speed *= 1.28f;//bring it up to 320 on g_speed 250 for vq3/wsw physics mode
-				if ((client->pers.haste || g_mapHaste.integer) && client->ps.stats[STAT_MOVEMENTSTYLE] != MV_QUAJK)
+				if ((client->pers.haste || g_mapHaste.integer) && client->ps.stats[STAT_MOVEMENTSTYLE] != MV_QUAJK && client->ps.stats[STAT_MOVEMENTSTYLE] != MV_SICKO)
 					client->ps.speed *= 1.3f; // haste: ~416 ups for CPM/OCPM on haste maps
 			}
 		}

@@ -52,6 +52,8 @@ float DF_GetAccelerate() {
 		case MV_OCPM:
 		case MV_RJCPM:
 		case MV_BOTCPM:
+		case MV_QUAJK:
+		case MV_SICKO:
 			accelerate = pm_cpm_accelerate;
 			break;
 		case MV_WSW:
@@ -173,6 +175,8 @@ float DF_GetFriction() {
 		case MV_RJQ3:
 		case MV_RJCPM:
 		case MV_BOTCPM:
+		case MV_QUAJK:
+		case MV_SICKO:
 			friction = pm_vq3_friction;
 			break;
 		case MV_SLICK:

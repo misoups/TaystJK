@@ -54,9 +54,10 @@ Our aims are to:
 - **`/callvote mapnum <n>`** — Votes for a map by its index from `/maplist`.
 - **Map change lockout** — `randommap` and `mapnum` votes are blocked for 10 minutes after a map load, same as the existing `map` vote lockout.
 
-### New Movement Style
+### New Movement Styles
 
 - **MV_QUAJK (style 19)** added — Available via `/move quajk`. Does not receive haste speed bonus.
+- **MV_SICKO (style 20)** added — Available via `/move sicko`. Ported from MVSDK/EternalJK2: same Q2-style ramp physics and rampjumps as QuaJK, but with dynamic air acceleration (accel rate scales with missing speed, capped at 200) instead of QuaJK's CPM-blend, and reduced water friction. Does not receive haste speed bonus.
 
 ### Cross-Server Communication (Linux)
 

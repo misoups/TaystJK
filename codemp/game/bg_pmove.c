@@ -440,7 +440,7 @@ QINLINE int PM_GetMovePhysics(void)
 #if _GAME
 	if (pm->ps->stats[STAT_RACEMODE])
 		return (pm->ps->stats[STAT_MOVEMENTSTYLE]);
-	else if ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || (g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_OCPM || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_SURF || g_movementStyle.integer == MV_QUAJK))
+	else if ((g_movementStyle.integer >= MV_SIEGE && g_movementStyle.integer <= MV_WSW) || (g_movementStyle.integer == MV_SP || g_movementStyle.integer == MV_SLICK || g_movementStyle.integer == MV_OCPM || g_movementStyle.integer == MV_TRIBES || g_movementStyle.integer == MV_SURF || g_movementStyle.integer == MV_QUAJK || g_movementStyle.integer == MV_SICKO))
 		return (g_movementStyle.integer);
 	else if (g_movementStyle.integer < MV_SIEGE)
 		return MV_SIEGE;
@@ -1205,7 +1205,7 @@ static void PM_Friction( void ) {
 		pEnt = pm_entSelf;
 	}
 
-	if (moveStyle == MV_CPM || moveStyle == MV_WSW || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM || moveStyle == MV_QUAJK)
+	if (moveStyle == MV_CPM || moveStyle == MV_WSW || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM || moveStyle == MV_QUAJK || moveStyle == MV_SICKO)
 		realfriction = pm_vq3_friction;
 
 	// apply ground friction, even if on ladder
@@ -1249,7 +1249,7 @@ static void PM_Friction( void ) {
 	{
 		// apply ground friction
 		if ( pm->waterlevel <= 1 ) {
-			if (pml.walking && (!(pml.groundTrace.surfaceFlags & SURF_SLICK) || (moveStyle == MV_QUAJK && (pm->cmd.buttons & BUTTON_WALKING))) && ((moveStyle != MV_SLICK || (pm->cmd.buttons & BUTTON_WALKING)) && (moveStyle != MV_TRIBES || !(pm->cmd.buttons & BUTTON_DASH)) && (moveStyle != MV_TRIBES || pm->ps->clientNum < MAX_CLIENTS || (pm->ps->eFlags2 & EF2_NOT_USED_1 && !pm->waterlevel) || !(pm->cmd.buttons & BUTTON_WALKING))) ) { //Slick style here potentially
+			if (pml.walking && (!(pml.groundTrace.surfaceFlags & SURF_SLICK) || ((moveStyle == MV_QUAJK || moveStyle == MV_SICKO) && (pm->cmd.buttons & BUTTON_WALKING))) && ((moveStyle != MV_SLICK || (pm->cmd.buttons & BUTTON_WALKING)) && (moveStyle != MV_TRIBES || !(pm->cmd.buttons & BUTTON_DASH)) && (moveStyle != MV_TRIBES || pm->ps->clientNum < MAX_CLIENTS || (pm->ps->eFlags2 & EF2_NOT_USED_1 && !pm->waterlevel) || !(pm->cmd.buttons & BUTTON_WALKING))) ) { //Slick style here potentially
 				//do this unless its (slick and walking) or unless its (tribes and not walking)
 										
 				// if getting knocked back, no friction
@@ -1276,7 +1276,10 @@ static void PM_Friction( void ) {
 
 	// apply water friction even if just wading
 	if ( pm->waterlevel ) {
-		drop += speed*pm_waterfriction*pm->waterlevel*pml.frametime;
+		float realwaterfriction = pm_waterfriction;
+		if (moveStyle == MV_SICKO)
+			realwaterfriction = 0.4f; // matches MVSDK/EternalJK2 Sicko water friction
+		drop += speed*realwaterfriction*pm->waterlevel*pml.frametime;
 	}
 	// If on a client then there is no friction
 	else if ( pm->ps->groundEntityNum < MAX_CLIENTS )
@@ -1484,6 +1487,45 @@ static void PM_QuaJKAccelerate( vec3_t wishdir, float wishspeed, float baseAccel
 
 	if ( addspeed <= 0 ) return;
 	if ( accelspeed > addspeed ) accelspeed = addspeed;
+
+	for ( i = 0; i < 3; i++ )
+		pm->ps->velocity[i] += accelspeed * wishdir[i];
+}
+
+/*
+==============
+PM_SickoAccelerate
+
+Q2-style acceleration where the accel rate scales dynamically with the
+speed still needed (addspeed / frame-increment), clamped between
+baseAccel and maxAccel. Ported from MVSDK/EternalJK2's Sicko style.
+==============
+*/
+static void PM_SickoAccelerate( vec3_t wishdir, float wishspeed, float baseAccel, float maxAccel ) {
+	int		i;
+	float	addspeed, accelspeed, currentspeed;
+	float	baseInc, accel;
+
+	currentspeed = DotProduct( pm->ps->velocity, wishdir );
+	addspeed = wishspeed - currentspeed;
+	if ( addspeed <= 0 ) {
+		return;
+	}
+	baseInc = pml.frametime * wishspeed;
+
+	accel = baseInc ? ( addspeed / baseInc ) : 0; // avoid division by 0 just in case
+
+	if ( accel > maxAccel ) {
+		accel = maxAccel;
+	}
+	else if ( accel < baseAccel ) {
+		accel = baseAccel;
+	}
+
+	accelspeed = accel * baseInc;
+	if ( accelspeed > addspeed ) {
+		accelspeed = addspeed;
+	}
 
 	for ( i = 0; i < 3; i++ )
 		pm->ps->velocity[i] += accelspeed * wishdir[i];
@@ -3756,7 +3798,7 @@ static qboolean PM_CheckJump( void )
 					pm->ps->pm_flags &= ~PMF_JUMP_HELD;
 				}
 
-				if (moveStyle != MV_QW && moveStyle != MV_CPM && moveStyle != MV_Q3 && moveStyle != MV_PJK && moveStyle != MV_WSW && moveStyle != MV_RJQ3 && moveStyle != MV_RJCPM && moveStyle != MV_JETPACK && moveStyle != MV_SLICK && moveStyle != MV_BOTCPM && moveStyle != MV_QUAJK) {
+				if (moveStyle != MV_QW && moveStyle != MV_CPM && moveStyle != MV_Q3 && moveStyle != MV_PJK && moveStyle != MV_WSW && moveStyle != MV_RJQ3 && moveStyle != MV_RJCPM && moveStyle != MV_JETPACK && moveStyle != MV_SLICK && moveStyle != MV_BOTCPM && moveStyle != MV_QUAJK && moveStyle != MV_SICKO) {
 					{
 						pm->cmd.upmove = 0; // change this to allow hold to jump?
 						return qfalse;
@@ -3780,7 +3822,7 @@ static qboolean PM_CheckJump( void )
 	if ( pm->ps->pm_flags & PMF_JUMP_HELD )
 	{
 		// clear upmove so cmdscale doesn't lower running speed - LODA FIXME - no idea what this does lol
-		if (moveStyle != MV_QW && moveStyle != MV_CPM && moveStyle != MV_Q3 && moveStyle != MV_PJK && moveStyle != MV_WSW && moveStyle != MV_RJQ3 && moveStyle != MV_RJCPM && moveStyle != MV_JETPACK && moveStyle != MV_SLICK && moveStyle != MV_BOTCPM && moveStyle != MV_QUAJK)
+		if (moveStyle != MV_QW && moveStyle != MV_CPM && moveStyle != MV_Q3 && moveStyle != MV_PJK && moveStyle != MV_WSW && moveStyle != MV_RJQ3 && moveStyle != MV_RJCPM && moveStyle != MV_JETPACK && moveStyle != MV_SLICK && moveStyle != MV_BOTCPM && moveStyle != MV_QUAJK && moveStyle != MV_SICKO)
 		{
 			pm->cmd.upmove = 0;
 			return qfalse;
@@ -3819,6 +3861,7 @@ static qboolean PM_CheckJump( void )
 		(moveStyle != MV_SLICK) &&
 		(moveStyle != MV_BOTCPM) &&
 		(moveStyle != MV_QUAJK) &&
+		(moveStyle != MV_SICKO) &&
 		BG_CanUseFPNow(pm->gametype, pm->ps, pm->cmd.serverTime, FP_LEVITATION) )
 	{
 		qboolean allowWallRuns = qtrue;
@@ -4554,14 +4597,14 @@ static qboolean PM_CheckJump( void )
 	}
 	if (pm->cmd.upmove > 0)
 	{//no special jumps
-		if (moveStyle == MV_QW || moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_Q3 || moveStyle == MV_PJK || moveStyle == MV_WSW || moveStyle == MV_RJQ3 || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM || moveStyle == MV_QUAJK)
+		if (moveStyle == MV_QW || moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_Q3 || moveStyle == MV_PJK || moveStyle == MV_WSW || moveStyle == MV_RJQ3 || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM || moveStyle == MV_QUAJK || moveStyle == MV_SICKO)
 		{
 			vec3_t hVel;
 			float added, xyspeed, realjumpvelocity = JUMP_VELOCITY;
 
 			if (moveStyle == MV_WSW)
 				realjumpvelocity = 280.0f;
-			else if (moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_Q3 || moveStyle == MV_RJQ3 || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM || moveStyle == MV_QUAJK)
+			else if (moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_Q3 || moveStyle == MV_RJQ3 || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM || moveStyle == MV_QUAJK || moveStyle == MV_SICKO)
 				realjumpvelocity = 270.0f;
 
 			hVel[0] = pm->ps->velocity[0];
@@ -4779,6 +4822,8 @@ static void PM_WaterMove( void ) {
 		else
 			accel = pm_wateraccelerate;
 		PM_QuaJKAccelerate(wishdir, wishspeed, accel, pm_cpm_airstrafeaccelerate, 30.0f);
+	} else if (pm->ps->stats[STAT_MOVEMENTSTYLE] == MV_SICKO) {
+		PM_SickoAccelerate(wishdir, wishspeed, pm_wateraccelerate, 200.0f);
 	} else {
 		PM_Accelerate(wishdir, wishspeed, pm_wateraccelerate);
 	}
@@ -5229,6 +5274,8 @@ static void PM_AirMove( void ) {
 		else
 			accel = pm_airaccelerate;
 		PM_QuaJKAccelerate(wishdir, wishspeed, accel, pm_cpm_airstrafeaccelerate, 30.0f);
+	} else if (moveStyle == MV_SICKO) {
+		PM_SickoAccelerate(wishdir, wishspeed, pm_airaccelerate, 200.0f);
 	}
 	else if (moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_PJK || moveStyle == MV_WSW || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM)
 	{
@@ -5924,7 +5971,7 @@ static void PM_WalkMove( void ) {
 		}
 	}
 
-	if (moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_RJCPM || moveStyle == MV_BOTCPM || moveStyle == MV_QUAJK)
+	if (moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_RJCPM || moveStyle == MV_BOTCPM || moveStyle == MV_QUAJK || moveStyle == MV_SICKO)
 		realaccelerate = pm_cpm_accelerate;
 	else if (moveStyle == MV_Q3 || moveStyle == MV_RJQ3)
 		realduckscale = pm_vq3_duckScale;
@@ -6059,7 +6106,7 @@ static void PM_WalkMove( void ) {
 	}
 	else if (((pml.groundTrace.surfaceFlags & SURF_SLICK) && moveStyle != MV_SLICK) || pm->ps->pm_flags & PMF_TIME_KNOCKBACK)
 	{//We just ignore this with slick style since we area always slick, we dont need the flag to tell us that
-		if (moveStyle == MV_OCPM || moveStyle == MV_QUAJK)
+		if (moveStyle == MV_OCPM || moveStyle == MV_QUAJK || moveStyle == MV_SICKO)
 			accelerate = pm_cpm_accelerate;
 //[JAPRO - Make CPM/RJCPM handle SLICK-textured surfaces like OCPM (controllable pm_cpm_accelerate instead
 // of the pm_airaccelerate slide). Scoped to actual slick surfaces; knockback behaviour is left unchanged.]
@@ -6144,8 +6191,8 @@ static void PM_WalkMove( void ) {
 		return;
 	}
 
-	if (moveStyle == MV_QUAJK) {
-		// Preserve speed through slope/ramp collisions for QuaJK
+	if (moveStyle == MV_QUAJK || moveStyle == MV_SICKO) {
+		// Preserve speed through slope/ramp collisions for QuaJK/Sicko
 		float speed_pre = VectorLength(pm->ps->velocity);
 		PM_StepSlideMove(qfalse);
 		if (speed_pre > 0) {
@@ -6754,7 +6801,7 @@ static void PM_CrashLand(void) {
 		pm->ps->velocity[2] = 0;
 	}
 
-	if ((moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_Q3 || moveStyle == MV_RJQ3 || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM || moveStyle == MV_SURF || moveStyle == MV_QUAJK) && ((int)pm->ps->fd.forceJumpZStart > pm->ps->origin[2] + 1)) {
+	if ((moveStyle == MV_CPM || moveStyle == MV_OCPM || moveStyle == MV_Q3 || moveStyle == MV_RJQ3 || moveStyle == MV_RJCPM || moveStyle == MV_SLICK || moveStyle == MV_BOTCPM || moveStyle == MV_SURF || moveStyle == MV_QUAJK || moveStyle == MV_SICKO) && ((int)pm->ps->fd.forceJumpZStart > pm->ps->origin[2] + 1)) {
 		if (1 > (sqrt(pm->ps->velocity[0] * pm->ps->velocity[0] + pm->ps->velocity[1] * pm->ps->velocity[1])))//No xyvel
 			pm->ps->velocity[2] = -vel; //OVERBOUNCE OVER BOUNCE
 	}
@@ -6972,9 +7019,9 @@ static void PM_GroundTrace( void ) {
 		return;
 	}
 
-	// Q2/Q3 ramp departure: QuaJK leaves the ground when going up fast enough
+	// Q2/Q3 ramp departure: QuaJK/Sicko leave the ground when going up fast enough
 	// (matches MVSDK/EternalJK2 behaviour — enables proper ramp-jump speed)
-	if ( pm->ps->stats[STAT_MOVEMENTSTYLE] == MV_QUAJK && pm->ps->velocity[2] > 180 ) {
+	if ( (pm->ps->stats[STAT_MOVEMENTSTYLE] == MV_QUAJK || pm->ps->stats[STAT_MOVEMENTSTYLE] == MV_SICKO) && pm->ps->velocity[2] > 180 ) {
 		pm->ps->groundEntityNum = ENTITYNUM_NONE;
 		pml.groundPlane = qtrue;
 		pml.walking = qfalse;

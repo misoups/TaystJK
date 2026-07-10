@@ -1163,8 +1163,8 @@ void PM_StepSlideMove( qboolean gravity ) {
 	int NEW_STEPSIZE = STEPSIZE;
 	const int moveStyle = PM_GetMovePhysics();
 
-	// QuaJK uses Q2/Q3 surface-slide algorithm for correct ramp behaviour
-	if (moveStyle == MV_QUAJK) {
+	// QuaJK/Sicko use Q2/Q3 surface-slide algorithm for correct ramp behaviour
+	if (moveStyle == MV_QUAJK || moveStyle == MV_SICKO) {
 		PM_Q2StepSlideMove(gravity);
 		return;
 	}
