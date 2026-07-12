@@ -1047,10 +1047,23 @@ static void PM_Q2StepSlideMove_( void )
 		// clip velocity against each collected plane
 		for ( i = 0; i < numplanes; i++ )
 		{
+			float xySpeed = sqrtf( pm->ps->velocity[0]*pm->ps->velocity[0] + pm->ps->velocity[1]*pm->ps->velocity[1] );
+
 			PM_ClipVelocity( pm->ps->velocity, planes[i], pm->ps->velocity, overbounce );
 
-			if ( planes[i][2] >= MIN_WALK_NORMAL )
+			if ( planes[i][2] >= MIN_WALK_NORMAL ) {
 				pml.clipped = qtrue;
+
+				// landing on a walkable slope: rescale along the plane so the
+				// clip doesn't eat horizontal speed. Flat landings are
+				// unaffected (clip only removes Z there) and walls
+				// (normal[2] < MIN_WALK_NORMAL) still stop you.
+				if ( pm->ps->groundEntityNum == ENTITYNUM_NONE ) {
+					float newXY = sqrtf( pm->ps->velocity[0]*pm->ps->velocity[0] + pm->ps->velocity[1]*pm->ps->velocity[1] );
+					if ( newXY > 1.0f && newXY < xySpeed )
+						VectorScale( pm->ps->velocity, xySpeed / newXY, pm->ps->velocity );
+				}
+			}
 
 			for ( j = 0; j < numplanes; j++ )
 				if ( j != i )
